@@ -1,18 +1,12 @@
-import subprocess
-import json
 import typer
 from rich.console import Console
 from rich.table import Table
 from typing import Optional, List
+from ical.calendar import run_applescript, add_event as core_add_event, get_events as core_get_events
+from ical.mcp import run_server
 
-app = typer.Typer(help="macOS Calendar.app CLI — agent-friendly calendar event management.")
+app = typer.Typer(help="macOS Calendar.app CLI & MCP — agent-friendly calendar management.")
 console = Console()
-
-def run_applescript(script: str) -> str:
-    res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
-    if res.returncode != 0:
-        raise RuntimeError(res.stderr.strip())
-    return res.stdout.strip()
 
 @app.command("calendars")
 def list_calendars():
@@ -33,25 +27,25 @@ def add_event(
     calendar: str = typer.Option("Calendar", "--calendar", "-c", help="Calendar name"),
     attendee: Optional[List[str]] = typer.Option(None, "--attendee", "-a", help="Attendee email address(es) to invite"),
     description: str = typer.Option("", "--description", "-d", help="Event description"),
-    location: str = typer.Option("", "--location", "-l", help="Event location")
+    location: str = typer.Option("", "--location", "-l", help="Event location"),
+    check_conflict: bool = typer.Option(True, "--check-conflict/--no-check-conflict", help="Enable/disable conflict detection")
 ):
-    """Add a calendar event and optionally invite attendees."""
-    attendee_script = ""
-    if attendee:
-        for email in attendee:
-            attendee_script += f'\n\t\t\tmake new attendee at end of attendees of newEvt with properties {{email:"{email}"}}'
-
-    script = f'''
-    tell application "Calendar"
-        tell calendar "{calendar}"
-            set newEvt to make new event with properties {{summary:"{title}", start date:date "{start}", end date:date "{end}", description:"{description}", location:"{location}"}}{attendee_script}
-            return id of newEvt
-        end tell
-    end tell
-    '''
+    """Add a calendar event with conflict checking and attendee invites."""
     try:
-        event_id = run_applescript(script)
-        console.print(f"[bold green]✓ Event created![/bold green] ID: {event_id}")
+        res = core_add_event(
+            title=title,
+            start=start,
+            end=end,
+            calendar=calendar,
+            attendee=attendee,
+            description=description,
+            location=location,
+            check_conflict=check_conflict
+        )
+        console.print(f"[bold green]✓ Event created![/bold green] ID: {res['id']}")
+    except ValueError as err:
+        console.print(f"[bold red]Conflict Warning:[/bold red] {err}")
+        raise typer.Exit(code=1)
     except Exception as err:
         console.print(f"[bold red]Error creating event:[/bold red] {err}")
         raise typer.Exit(code=1)
@@ -61,37 +55,27 @@ def list_events(
     calendar: str = typer.Option("Calendar", "--calendar", "-c", help="Calendar name")
 ):
     """List events in a specified calendar."""
-    script = f'''
-    tell application "Calendar"
-        tell calendar "{calendar}"
-            set res to ""
-            set evts to every event
-            repeat with e in evts
-                set res to res & (summary of e) & " | " & (start date of e as string) & " | " & (end date of e as string) & "\n"
-            end repeat
-            return res
-        end tell
-    end tell
-    '''
     try:
-        output = run_applescript(script)
+        events = core_get_events(calendar)
         table = Table(title=f"Events in {calendar}")
         table.add_column("Title", style="bold white")
         table.add_column("Start", style="green")
         table.add_column("End", style="yellow")
-        for line in output.splitlines():
-            if line.strip():
-                parts = line.split(" | ")
-                if len(parts) == 3:
-                    table.add_row(parts[0], parts[1], parts[2])
+        for evt in events:
+            table.add_row(evt["title"], evt["start_str"], evt["end_str"])
         console.print(table)
     except Exception as err:
         console.print(f"[bold red]Error listing events:[/bold red] {err}")
 
+@app.command("mcp")
+def serve_mcp():
+    """Run MCP server over stdio for AI agent integration."""
+    run_server()
+
 @app.command("version")
 def version():
     """Print ical version."""
-    console.print("ical version 0.1.0")
+    console.print("ical version 0.2.0 (CLI + MCP + Conflict Detection)")
 
 if __name__ == "__main__":
     app()
