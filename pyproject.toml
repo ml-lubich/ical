@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ical-cli"
+version = "0.1.0"
+description = "macOS Calendar.app CLI tool — schedule, invite, list, delete calendar events"
+readme = "README.md"
+authors = [{ name = "Misha Lubich", email = "michaelle.lubich@gmail.com" }]
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+ical = "ical.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ical"]
