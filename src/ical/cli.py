@@ -1,11 +1,42 @@
+import sys
+import json
 import typer
 from rich.console import Console
 from rich.table import Table
 from typing import Optional, List
 from ical.calendar import run_applescript, add_event as core_add_event, get_events as core_get_events
 from ical.mcp import run_server
+from ical import agent
 
-app = typer.Typer(help="macOS Calendar.app CLI & MCP — agent-friendly calendar management.")
+EPILOG = """\
+Examples:
+
+  ical calendars
+  ical list --calendar "michaelle.lubich@gmail.com" --json
+  ical add --title "Mock Interview" --start "Monday, Aug 10, 2026 at 1:00 PM" --end "Monday, Aug 10, 2026 at 2:00 PM" -a user@example.com
+  ical mcp
+
+Agents: run `ical agent guide` for a playbook, `ical agent schema` for JSON contract.
+"""
+
+app = typer.Typer(
+    name="ical",
+    help="macOS Calendar.app CLI & MCP — agent-friendly calendar management.",
+    epilog=EPILOG,
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    context_settings={"help_option_names": ["-h", "--help"]}
+)
+
+agent_app = typer.Typer(
+    name="agent",
+    help="Machine-readable schema and playbook for LLM/automation use.",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    context_settings={"help_option_names": ["-h", "--help"]}
+)
+app.add_typer(agent_app, name="agent")
+
 console = Console()
 
 @app.command("calendars")
@@ -52,11 +83,15 @@ def add_event(
 
 @app.command("list")
 def list_events(
-    calendar: str = typer.Option("Calendar", "--calendar", "-c", help="Calendar name")
+    calendar: str = typer.Option("Calendar", "--calendar", "-c", help="Calendar name"),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON output")
 ):
     """List events in a specified calendar."""
     try:
         events = core_get_events(calendar)
+        if as_json:
+            console.print_json(data={"calendar": calendar, "events": events})
+            return
         table = Table(title=f"Events in {calendar}")
         table.add_column("Title", style="bold white")
         table.add_column("Start", style="green")
@@ -69,13 +104,23 @@ def list_events(
 
 @app.command("mcp")
 def serve_mcp():
-    """Run MCP server over stdio for AI agent integration."""
+    """Run FastMCP server over stdio for AI agent integration."""
     run_server()
+
+@agent_app.command("schema")
+def agent_schema_cmd() -> None:
+    """Print JSON command contract for LLM agents."""
+    console.print_json(data=agent.build_schema())
+
+@agent_app.command("guide")
+def agent_guide_cmd() -> None:
+    """Print markdown playbook for LLM agents."""
+    sys.stdout.write(agent.build_guide())
 
 @app.command("version")
 def version():
     """Print ical version."""
-    console.print("ical version 0.2.0 (CLI + MCP + Conflict Detection)")
+    console.print("ical version 0.2.0 (LLM-Native Typer CLI + FastMCP)")
 
 if __name__ == "__main__":
     app()
