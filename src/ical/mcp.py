@@ -2,7 +2,10 @@ import sys
 import json
 import asyncio
 from typing import List, Optional
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:
+    from mcp.server.mcpserver import MCPServer as FastMCP
 from ical.calendar import add_event as core_add_event, get_events as core_get_events, run_applescript
 
 mcp = FastMCP("ical")
