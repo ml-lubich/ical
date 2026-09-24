@@ -4,6 +4,14 @@ macOS Calendar.app CLI tool — schedule, invite, list, delete calendar events.
 
 ## Install
 ```bash
+pip install mac-ical
+# or
+brew install ml-lubich/tap/ical
+```
+
+From a checkout:
+
+```bash
 uv tool install -e ~/dev/ical
 ```
 

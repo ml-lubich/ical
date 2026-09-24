@@ -3,18 +3,34 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ical-cli"
-version = "0.1.0"
-description = "macOS Calendar.app CLI tool — schedule, invite, list, delete calendar events"
+name = "mac-ical"
+version = "0.2.1"
+description = "macOS Calendar.app CLI and MCP server — list calendars, schedule events, invite attendees"
 readme = "README.md"
+license = { text = "MIT" }
 authors = [{ name = "Misha Lubich", email = "michaelle.lubich@gmail.com" }]
 requires-python = ">=3.10"
+keywords = ["calendar", "macos", "cli", "mcp", "applescript"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
     "mcp>=1.0.0",
     "python-dateutil>=2.8.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ml-lubich/ical"
+Repository = "https://github.com/ml-lubich/ical"
+Issues = "https://github.com/ml-lubich/ical/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -26,3 +42,6 @@ ical = "ical.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ical"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/ical", "README.md", "LICENSE", "pyproject.toml"]
