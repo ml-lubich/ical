@@ -3,6 +3,11 @@ import datetime
 from dateutil import parser
 from typing import List, Dict, Any, Optional
 
+def _escape_applescript(s: str) -> str:
+    """Escape backslashes and double quotes so a value can be safely embedded
+    inside a double-quoted AppleScript string literal."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
 def run_applescript(script: str) -> str:
     res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     if res.returncode != 0:
@@ -15,7 +20,7 @@ def parse_date(date_str: str) -> datetime.datetime:
 def get_events(calendar: str = "Calendar") -> List[Dict[str, Any]]:
     script = f'''
     tell application "Calendar"
-        tell calendar "{calendar}"
+        tell calendar "{_escape_applescript(calendar)}"
             set res to ""
             set evts to every event
             repeat with e in evts
@@ -79,12 +84,12 @@ def add_event(
     attendee_script = ""
     if attendee:
         for email in attendee:
-            attendee_script += f'\n\t\t\tmake new attendee at end of attendees of newEvt with properties {{email:"{email}"}}'
+            attendee_script += f'\n\t\t\tmake new attendee at end of attendees of newEvt with properties {{email:"{_escape_applescript(email)}"}}'
 
     script = f'''
     tell application "Calendar"
-        tell calendar "{calendar}"
-            set newEvt to make new event with properties {{summary:"{title}", start date:date "{start}", end date:date "{end}", description:"{description}", location:"{location}"}}{attendee_script}
+        tell calendar "{_escape_applescript(calendar)}"
+            set newEvt to make new event with properties {{summary:"{_escape_applescript(title)}", start date:date "{start}", end date:date "{end}", description:"{_escape_applescript(description)}", location:"{_escape_applescript(location)}"}}{attendee_script}
             return id of newEvt
         end tell
     end tell

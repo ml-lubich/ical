@@ -7,6 +7,7 @@ from typing import Optional, List
 from ical.calendar import run_applescript, add_event as core_add_event, get_events as core_get_events
 from ical.mcp import run_server
 from ical import agent
+from ical import __version__
 
 EPILOG = """\
 Examples:
@@ -120,7 +121,7 @@ def agent_guide_cmd() -> None:
 @app.command("version")
 def version():
     """Print ical version."""
-    console.print("ical version 0.2.0 (LLM-Native Typer CLI + FastMCP)")
+    console.print(f"ical version {__version__} (LLM-Native Typer CLI + FastMCP)")
 
 if __name__ == "__main__":
     app()

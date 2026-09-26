@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mac-ical"
-version = "0.2.1"
+version = "0.2.2"
 description = "macOS Calendar.app CLI and MCP server — list calendars, schedule events, invite attendees"
 readme = "README.md"
 license = { text = "MIT" }
@@ -35,6 +35,7 @@ Issues = "https://github.com/ml-lubich/ical/issues"
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
 ]
 
 [project.scripts]
