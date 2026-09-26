@@ -91,7 +91,11 @@ def list_events(
     try:
         events = core_get_events(calendar)
         if as_json:
-            console.print_json(data={"calendar": calendar, "events": events})
+            json_events = [
+                {"title": e["title"], "start": e["start_str"], "end": e["end_str"]}
+                for e in events
+            ]
+            console.print_json(data={"calendar": calendar, "events": json_events})
             return
         table = Table(title=f"Events in {calendar}")
         table.add_column("Title", style="bold white")

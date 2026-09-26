@@ -1,3 +1,4 @@
+import datetime
 import json
 from unittest.mock import patch
 
@@ -81,6 +82,29 @@ def test_list_command_json_output():
     payload = json.loads(result.stdout)
     assert payload["calendar"] == "Work"
     assert payload["events"][0]["title"] == "Standup"
+
+
+def test_list_command_json_output_with_real_datetimes():
+    # Regression test: core_get_events() returns real datetime objects in
+    # "start"/"end" (see ical.calendar.get_events); the JSON path must not
+    # pass those straight to console.print_json, which raises
+    # "Object of type datetime is not JSON serializable" and gets
+    # swallowed by the command's own error handler (exit 0, broken output).
+    events = [
+        {
+            "title": "Standup",
+            "start": datetime.datetime(2026, 8, 10, 9, 0),
+            "end": datetime.datetime(2026, 8, 10, 9, 15),
+            "start_str": "Mon 9am",
+            "end_str": "Mon 9:15am",
+        }
+    ]
+    with patch("ical.cli.core_get_events", return_value=events):
+        result = runner.invoke(app, ["list", "--calendar", "Work", "--json"])
+    assert result.exit_code == 0
+    assert "Error listing events" not in result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["events"][0] == {"title": "Standup", "start": "Mon 9am", "end": "Mon 9:15am"}
 
 
 def test_list_command_table_output():

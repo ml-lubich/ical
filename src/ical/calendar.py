@@ -18,17 +18,26 @@ def parse_date(date_str: str) -> datetime.datetime:
     return parser.parse(date_str)
 
 def get_events(calendar: str = "Calendar") -> List[Dict[str, Any]]:
+    # Bulk-fetch each property across all events in one Apple Event call each
+    # (summary of every event / start date of every event / ...) instead of
+    # looping "repeat with e in evts" and querying properties per-event.
+    # The per-event loop round-trips to Calendar.app 2-3x per event and is
+    # catastrophically slow (multi-second-per-event, effectively hangs) on
+    # any calendar with more than a handful of events - a well-known macOS
+    # Calendar AppleScript scripting-bridge performance bug.
     script = f'''
     tell application "Calendar"
         tell calendar "{_escape_applescript(calendar)}"
-            set res to ""
-            set evts to every event
-            repeat with e in evts
-                set res to res & (summary of e) & " | " & (start date of e as string) & " | " & (end date of e as string) & "\n"
-            end repeat
-            return res
+            set summaries to summary of every event
+            set starts to start date of every event
+            set ends to end date of every event
         end tell
     end tell
+    set res to ""
+    repeat with i from 1 to (count of summaries)
+        set res to res & (item i of summaries) & " | " & ((item i of starts) as string) & " | " & ((item i of ends) as string) & "\n"
+    end repeat
+    return res
     '''
     try:
         output = run_applescript(script)
