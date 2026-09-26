@@ -42,8 +42,8 @@ def build_guide() -> str:
 
 ## Common Operations:
 - List calendars: `ical calendars`
-- List events in calendar: `ical list -c michaelle.lubich@gmail.com --json`
+- List events in calendar: `ical list -c you@example.com --json`
 - Add event with conflict check & invites:
-  `ical add -t "Meeting" -s "Monday, August 10, 2026 at 1:00 PM" -e "Monday, August 10, 2026 at 2:00 PM" -c "michaelle.lubich@gmail.com" -a "user@example.com"`
+  `ical add -t "Meeting" -s "Monday, August 10, 2026 at 1:00 PM" -e "Monday, August 10, 2026 at 2:00 PM" -c "you@example.com" -a "user@example.com"`
 - Launch FastMCP stdio server for tool calling: `ical mcp`
 """

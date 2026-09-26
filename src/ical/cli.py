@@ -13,7 +13,7 @@ EPILOG = """\
 Examples:
 
   ical calendars
-  ical list --calendar "michaelle.lubich@gmail.com" --json
+  ical list --calendar "you@example.com" --json
   ical add --title "Mock Interview" --start "Monday, Aug 10, 2026 at 1:00 PM" --end "Monday, Aug 10, 2026 at 2:00 PM" -a user@example.com
   ical mcp
 
