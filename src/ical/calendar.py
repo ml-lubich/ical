@@ -52,22 +52,59 @@ def run_applescript(
     return res.stdout.strip()
 
 def parse_date(date_str: str) -> datetime.datetime:
-    return parser.parse(date_str)
+    value = parser.parse(date_str)
+    if value.tzinfo is not None:
+        value = value.astimezone().replace(tzinfo=None)
+    return value
 
-def get_events(calendar: str = "Calendar") -> List[Dict[str, Any]]:
-    # Bulk-fetch each property across all events in one Apple Event call each
+
+def _applescript_date_setup(name: str, value: datetime.datetime) -> str:
+    """Set an AppleScript date using numeric components, avoiding locale parsing."""
+    seconds = value.hour * 3600 + value.minute * 60 + value.second
+    return (
+        f"set {name} to current date\n"
+        f"set day of {name} to 1\n"
+        f"set year of {name} to {value.year}\n"
+        f"set month of {name} to {value.month}\n"
+        f"set day of {name} to {value.day}\n"
+        f"set time of {name} to {seconds}\n"
+    )
+
+def get_events(
+    calendar: str = "Calendar",
+    *,
+    start_before: Optional[datetime.datetime] = None,
+    end_after: Optional[datetime.datetime] = None,
+) -> List[Dict[str, Any]]:
+    # Bulk-fetch each property across all matching events in one Apple Event call each
     # (summary of every event / start date of every event / ...) instead of
     # looping "repeat with e in evts" and querying properties per-event.
     # The per-event loop round-trips to Calendar.app 2-3x per event and is
     # catastrophically slow (multi-second-per-event, effectively hangs) on
-    # any calendar with more than a handful of events - a well-known macOS
-    # Calendar AppleScript scripting-bridge performance bug.
+    # calendars with more than a handful of events - a well-known macOS
+    # Calendar AppleScript scripting-bridge performance bug. Conflict checks
+    # also constrain matchingEvents to the requested overlap window.
+    if (start_before is None) != (end_after is None):
+        raise ValueError("Both start_before and end_after are required for a bounded event query.")
+    event_query = "every event"
+    date_setup = ""
+    if start_before is not None and end_after is not None:
+        date_setup = (
+            _applescript_date_setup("queryStart", end_after)
+            + _applescript_date_setup("queryEnd", start_before)
+        )
+        event_query = (
+            "every event whose start date is less than queryEnd "
+            "and end date is greater than queryStart"
+        )
     script = f'''
     tell application "Calendar"
         tell calendar "{_escape_applescript(calendar)}"
-            set summaries to summary of every event
-            set starts to start date of every event
-            set ends to end date of every event
+            {date_setup}
+            set matchingEvents to {event_query}
+            set summaries to summary of matchingEvents
+            set starts to start date of matchingEvents
+            set ends to end date of matchingEvents
         end tell
     end tell
     set res to ""
@@ -152,7 +189,7 @@ def get_event_details(calendar: str, event_id: str) -> Dict[str, Any]:
     }
 
 def check_conflicts(calendar: str, start_dt: datetime.datetime, end_dt: datetime.datetime) -> List[Dict[str, Any]]:
-    existing = get_events(calendar)
+    existing = get_events(calendar, start_before=end_dt, end_after=start_dt)
     conflicts = []
     for evt in existing:
         # Check overlap: start1 < end2 and start2 < end1
@@ -184,10 +221,12 @@ def add_event(
         for email in attendee:
             attendee_script += f'\n\t\t\tmake new attendee at end of attendees of newEvt with properties {{email:"{_escape_applescript(email)}"}}'
 
+    date_setup = _applescript_date_setup("startDate", start_dt) + _applescript_date_setup("endDate", end_dt)
     script = f'''
     tell application "Calendar"
         tell calendar "{_escape_applescript(calendar)}"
-            set newEvt to make new event with properties {{summary:"{_escape_applescript(title)}", start date:date "{start}", end date:date "{end}", description:"{_escape_applescript(description)}", location:"{_escape_applescript(location)}"}}{attendee_script}
+            {date_setup}
+            set newEvt to make new event with properties {{summary:"{_escape_applescript(title)}", start date:startDate, end date:endDate, description:"{_escape_applescript(description)}", location:"{_escape_applescript(location)}"}}{attendee_script}
             return id of newEvt
         end tell
     end tell

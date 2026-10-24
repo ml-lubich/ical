@@ -47,10 +47,18 @@ Calendar has no recorded response from that attendee yet; it does not mean
 they accepted. CLI errors are printed to stderr and return a nonzero exit
 status.
 
-Every Calendar AppleScript call has a 20-second timeout. Calendar failures,
-timeouts, and failed event lookups are reported as errors; `ical list` does not
-turn an automation failure into an empty calendar. If creation times out
-before Calendar returns an ID, JSON reports `status: "write_outcome_unknown"`
+Start and end values accept natural-language dates and ISO 8601. An explicit
+ISO 8601 UTC offset is converted to the Mac's local calendar time before the
+event is created; numeric date components avoid AppleScript misreading ISO
+strings as locale-specific dates.
+
+Every Calendar AppleScript call has a 20-second timeout. Conflict checks ask
+Calendar for only events that overlap the requested time window, which avoids
+loading an entire large calendar before an invitation. `ical list` still reads
+all events. Calendar failures, timeouts, and failed event lookups are reported
+as errors; `ical list` does not turn an automation failure into an empty
+calendar. If creation times out before Calendar returns an ID, JSON reports
+`status: "write_outcome_unknown"`
 and an error. Search for the event with `ical list` before retrying. If the
 conflict check times out before creation starts, JSON reports
 `status: "not_created"`; it is safe to retry after Calendar responds. If an ID

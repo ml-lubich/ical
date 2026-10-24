@@ -75,6 +75,12 @@ def test_parse_date_returns_datetime():
     assert dt.hour == 13
 
 
+def test_parse_date_normalizes_iso_offset_to_local_calendar_time():
+    supplied = datetime.datetime.fromisoformat("2026-10-25T11:00:00-07:00")
+    expected = supplied.astimezone().replace(tzinfo=None)
+    assert parse_date("2026-10-25T11:00:00-07:00") == expected
+
+
 def test_parse_date_invalid_raises():
     with pytest.raises(Exception):
         parse_date("not a date at all !!!")
@@ -94,6 +100,27 @@ def test_get_events_parses_lines():
     assert events[0]["start"] == datetime.datetime(2026, 8, 10, 18, 30)
     assert events[0]["end"] == datetime.datetime(2026, 8, 10, 19, 30)
     assert events[1]["title"] == "Standup"
+
+
+def test_get_events_window_uses_strict_overlap_predicate():
+    start = datetime.datetime(2026, 10, 25, 11, 0)
+    end = datetime.datetime(2026, 10, 25, 13, 30)
+    with patch("ical.calendar.run_applescript", return_value="") as mock_run:
+        get_events("Work", start_before=end, end_after=start)
+    script = mock_run.call_args.args[0]
+    assert "set queryStart to current date" in script
+    assert "set year of queryStart to 2026" in script
+    assert "set month of queryStart to 10" in script
+    assert "set day of queryStart to 25" in script
+    assert "set time of queryStart to 39600" in script
+    assert "set time of queryEnd to 48600" in script
+    assert "every event whose start date is less than queryEnd" in script
+    assert "and end date is greater than queryStart" in script
+
+
+def test_get_events_window_requires_both_bounds():
+    with pytest.raises(ValueError, match="Both"):
+        get_events("Work", start_before=datetime.datetime(2026, 10, 25, 13, 30))
 
 
 def test_get_events_skips_malformed_lines():
@@ -144,7 +171,7 @@ def test_check_conflicts_detects_overlap():
             "end": datetime.datetime(2026, 8, 10, 19, 30),
         }
     ]
-    with patch("ical.calendar.get_events", return_value=existing):
+    with patch("ical.calendar.get_events", return_value=existing) as mock_get:
         conflicts = check_conflicts(
             "Work",
             datetime.datetime(2026, 8, 10, 19, 0),
@@ -152,6 +179,27 @@ def test_check_conflicts_detects_overlap():
         )
     assert len(conflicts) == 1
     assert conflicts[0]["title"] == "Therapy"
+    mock_get.assert_called_once_with(
+        "Work",
+        start_before=datetime.datetime(2026, 8, 10, 20, 0),
+        end_after=datetime.datetime(2026, 8, 10, 19, 0),
+    )
+
+
+def test_check_conflicts_excludes_events_that_only_touch_window_edges():
+    existing = [
+        {"title": "Ends at start", "start": datetime.datetime(2026, 8, 10, 18, 0), "end": datetime.datetime(2026, 8, 10, 19, 0)},
+        {"title": "Overlaps start", "start": datetime.datetime(2026, 8, 10, 18, 59), "end": datetime.datetime(2026, 8, 10, 19, 1)},
+        {"title": "Overlaps end", "start": datetime.datetime(2026, 8, 10, 19, 59), "end": datetime.datetime(2026, 8, 10, 20, 1)},
+        {"title": "Starts at end", "start": datetime.datetime(2026, 8, 10, 20, 0), "end": datetime.datetime(2026, 8, 10, 21, 0)},
+    ]
+    with patch("ical.calendar.get_events", return_value=existing):
+        conflicts = check_conflicts(
+            "Work",
+            datetime.datetime(2026, 8, 10, 19, 0),
+            datetime.datetime(2026, 8, 10, 20, 0),
+        )
+    assert [event["title"] for event in conflicts] == ["Overlaps start", "Overlaps end"]
 
 
 def test_check_conflicts_no_overlap():
@@ -217,6 +265,33 @@ def test_add_event_success_returns_id_and_metadata():
     assert 'email:"alice@example.com"' in script
     assert 'email:"bob@example.com"' in script
     assert 'tell calendar "Work"' in script
+
+
+def test_add_event_converts_iso_offset_into_exact_numeric_calendar_date():
+    start = "2026-10-25T11:00:00-07:00"
+    end = "2026-10-25T13:30:00-07:00"
+    expected_start = datetime.datetime.fromisoformat(start).astimezone().replace(tzinfo=None)
+    expected_end = datetime.datetime.fromisoformat(end).astimezone().replace(tzinfo=None)
+    with patch("ical.calendar.check_conflicts", return_value=[]), \
+         patch("ical.calendar.run_applescript", return_value="event-id-iso") as mock_run:
+        result = add_event("Offset event", start, end)
+    script = mock_run.call_args.args[0]
+    assert f"set year of startDate to {expected_start.year}" in script
+    assert f"set month of startDate to {expected_start.month}" in script
+    assert f"set day of startDate to {expected_start.day}" in script
+    assert f"set time of startDate to {expected_start.hour * 3600 + expected_start.minute * 60}" in script
+    assert f"set year of endDate to {expected_end.year}" in script
+    assert "start date:startDate, end date:endDate" in script
+    assert 'date "2026-10-25T11:00:00-07:00"' not in script
+    assert result["id"] == "event-id-iso"
+
+    readback_start = expected_start.strftime("%A, %B %d, %Y at %I:%M:%S %p")
+    readback_end = expected_end.strftime("%A, %B %d, %Y at %I:%M:%S %p")
+    output = f"event-id-iso\nOffset event\n{readback_start}\n{readback_end}\n"
+    with patch("ical.calendar.run_applescript", return_value=output):
+        event = get_event_details("Calendar", result["id"])
+    assert event["start"] == expected_start
+    assert event["end"] == expected_end
 
 
 def test_add_event_no_check_conflict_skips_lookup():
