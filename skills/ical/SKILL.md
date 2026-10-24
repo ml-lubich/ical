@@ -1,93 +1,70 @@
 ---
+license: MIT
 name: ical
-description: Read and write macOS Calendar.app events from the CLI or from an AI agent over MCP. Use when asked to list calendars, list/check events, schedule a meeting, or check for scheduling conflicts on a Mac. Triggers include "what's on my calendar", "add an event", "schedule a meeting", "check for conflicts", "list my calendars", or any request to automate macOS Calendar.
+description: Read and write macOS Calendar.app events with the ical Typer CLI or its ical-mcp server. Use for listing calendars and events, scheduling meetings, inviting attendees, checking conflicts, and verifying event details or RSVP status.
 ---
 
 # ical
 
-CLI + MCP server for macOS Calendar.app, driven via AppleScript. List calendars, list events, and add events with attendee invites and automatic conflict detection.
+Use the `ical` Typer CLI for Calendar.app and the standalone `ical-mcp` executable for MCP clients. The PyPI distribution is named `ical-mcp` and requires Python 3.10 or newer.
 
 ## Install
 
-Local dev copy:
-```bash
-uv tool install -e ~/dev/ical
+```sh
+uv tool install --python 3.14 ical-mcp
 ```
 
-From git (what a friend/fresh machine runs):
-```bash
-git clone https://github.com/ml-lubich/ical
-uv tool install -e ./ical
+Or with pip and Python 3.10 or newer:
+
+```sh
+pip install ical-mcp
 ```
 
-Or from PyPI (package name `mac-ical`):
-```bash
-uv tool install mac-ical
+From a source checkout:
+
+```sh
+uv tool install --editable .
 ```
 
-## CLI commands
+The distribution installs the `ical` CLI and `ical-mcp` MCP server command. `ical mcp` remains a compatibility alias.
 
-```
-ical calendars                    # List available calendars in Calendar.app
-ical list -c "Calendar" [--json]  # List events in a calendar (table or JSON)
-ical add -t TITLE -s START -e END [-c CALENDAR] [-a ATTENDEE ...] \
-         [-d DESCRIPTION] [-l LOCATION] [--no-check-conflict]
-ical mcp                          # Run the FastMCP server over stdio (alias)
-ical-mcp                          # Run the FastMCP server over stdio
-ical agent guide                  # Playbook for LLM/automation use
-ical agent schema                 # JSON contract for the above
-ical version
-```
+## CLI
 
-`add` requires `--title/-t`, `--start/-s`, `--end/-e` (natural-language dates,
-e.g. `"Monday, August 10, 2026 at 1:00:00 PM"`); conflict checking is on by
-default (`--check-conflict`/`--no-check-conflict`).
-
-## MCP server
-
-Launch command: `ical-mcp` (stdio transport). The compatible `ical mcp` alias
-continues to run the same server. Exposes 3 tools:
-`list_calendars`, `list_events(calendar)`, `add_calendar_event(title, start, end, calendar, attendees, description, location, check_conflict)`.
-
-Register with Claude Code:
-```bash
-claude mcp add ical -- ical-mcp
-```
-
-Or manually in an MCP client config:
-```json
-{
-  "mcpServers": {
-    "ical": { "command": "ical-mcp" }
-  }
-}
-```
-
-If `ical-mcp` isn't on `PATH`, use the absolute path from `uv tool dir --bin`.
-Existing configurations using `ical` with `args: ["mcp"]` remain supported.
-
-**Known limitation:** `ical list` / `list_events` can be slow on calendars with
-many recurring events — this is a macOS Calendar AppleScript scripting-bridge
-performance limitation, not a bug in this tool's parsing.
-
-## macOS permissions
-
-Every command that touches Calendar.app runs through `osascript`, which
-triggers macOS's **Automation** permission: the calling app (Terminal.app,
-your MCP client, etc.) needs "Allow Terminal to control Calendar" approval in
-System Settings → Privacy & Security → Automation. No Full Disk Access,
-Contacts, or other privacy grants are needed.
-
-Trigger the permission prompt with a harmless read:
-```bash
+```text
+ical -h | --help
 ical calendars
+ical list --calendar CALENDAR [--json]
+ical add --title TITLE --start START --end END [--calendar CALENDAR] [--attendee EMAIL ...]
+ical show --id EVENT_ID [--calendar CALENDAR] [--json]
+ical agent guide
+ical agent schema
+ical version
+ical-mcp
 ```
 
-## Safety rules
+`ical add` checks for conflicts by default, creates the event once, then reads it back by ID before reporting success. `ical show` is read-only and returns the same verified event data. Use `--json` on `add` or `show` for machine-readable output.
 
-- Read-only by default: `calendars` and `list` never modify Calendar.app.
-- `add` creates a real calendar event and, with `--attendee`, sends real
-  invites — only run it when the user explicitly asked for that event.
-- Conflict detection is on by default; don't disable it unless asked.
-- Never write automation that silently loops `add` — every event this tool
-  creates is a real Calendar.app event visible to attendees.
+A verified JSON result has `status: "verified"` and an `event` with `id`, `title`, ISO 8601 `start` and `end`, `calendar`, and `attendees`. Each attendee includes `email` and RSVP `status`. `unknown` means Calendar has no recorded RSVP; it does not mean accepted.
+
+## MCP
+
+Configure an MCP client to launch `ical-mcp` over stdio. It exposes `list_calendars`, `list_events`, and `add_calendar_event`. Use `ical-mcp` in new configurations; `ical mcp` remains a compatibility alias.
+
+## Timeouts and safe recovery
+
+Calendar automation stops after 20 seconds and reports errors instead of waiting indefinitely. Do not blindly retry an event write after an uncertain result:
+
+- `not_created`: the conflict check timed out before creation began. No event was written; retry after Calendar responds.
+- `write_outcome_unknown`: creation timed out before an event ID came back. The event may exist; inspect `ical list` before retrying.
+- `created_unverified`: Calendar returned an ID but read-back failed. Use `ical show --id EVENT_ID --calendar CALENDAR` to verify before retrying.
+- `verification_failed`: `ical show` could not read the event. Retry the read after Calendar responds; do not repeat the create.
+
+`ical list` reports Calendar automation failures instead of treating them as an empty calendar. `ical agent guide` documents the agent workflow; `ical agent schema` describes JSON results.
+
+## macOS permission
+
+The app running `ical` or `ical-mcp` needs macOS Automation permission to control Calendar.app. Grant it in System Settings → Privacy & Security → Automation. A harmless read such as `ical calendars` can trigger the permission prompt.
+
+## Write safety
+
+`calendars`, `list`, and `show` are read-only. `add` creates a real calendar event and sends invitations to the supplied attendees. Only run `add` when the user explicitly requests that event. Never loop or blindly retry an uncertain `add`, because that can create duplicate events and invitations.

@@ -1,10 +1,12 @@
 # ical CLI
 
-macOS Calendar.app CLI tool — schedule, invite, list, delete calendar events.
+macOS Calendar.app CLI tool — schedule, invite, list, and verify calendar events.
 
 ## Install
 ```bash
-pip install mac-ical
+uv tool install --python 3.14 ical-mcp
+# or, with Python 3.10 or newer
+pip install ical-mcp
 # or
 brew install ml-lubich/tap/ical
 ```
@@ -12,8 +14,12 @@ brew install ml-lubich/tap/ical
 From a checkout:
 
 ```bash
-uv tool install -e ~/dev/ical
+uv tool install --editable .
 ```
+
+The PyPI distribution is named `ical-mcp`. It installs the `ical` Typer CLI
+and the standalone `ical-mcp` stdio server; `ical mcp` remains a compatibility
+alias for the server command.
 
 ## Usage
 ```bash
