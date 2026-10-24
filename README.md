@@ -17,10 +17,19 @@ uv tool install -e ~/dev/ical
 
 ## Usage
 ```bash
+ical -h
+ical agent -h
 ical calendars
 ical add --title "Team Sync" --start "Monday, August 10, 2026 at 1:00:00 PM" --end "Monday, August 10, 2026 at 2:00:00 PM" -a guest@example.com -c you@example.com
 ical list -c you@example.com
+ical list -c you@example.com -j
 ```
+
+Every command and command group accepts both `-h` and `--help`; generated
+shell-completion flags are disabled so help lists the supported command
+surface. `ical list` prints a human-readable table; `-j`/`--json` prints one
+JSON object to stdout. CLI errors are printed to stderr and return a nonzero
+exit status.
 
 ## MCP (for AI agents)
 `ical mcp` runs a FastMCP server over stdio exposing `list_calendars`, `list_events`, and `add_calendar_event`. Point any MCP-compatible client (Claude Desktop, Claude Code, etc.) at the installed `ical` binary:

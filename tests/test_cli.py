@@ -11,7 +11,7 @@ runner = CliRunner()
 
 
 def test_calendars_command_lists_names():
-    with patch("ical.cli.run_applescript", return_value="Home, Work"):
+    with patch("ical.calendar.run_applescript", return_value="Home, Work"):
         result = runner.invoke(app, ["calendars"])
     assert result.exit_code == 0
     assert "Home" in result.stdout
@@ -20,7 +20,7 @@ def test_calendars_command_lists_names():
 
 def test_add_command_success():
     with patch(
-        "ical.cli.core_add_event",
+        "ical.calendar.add_event",
         return_value={"id": "evt-1", "title": "Standup", "start": "s", "end": "e", "calendar": "Work"},
     ) as mock_add:
         result = runner.invoke(
@@ -44,7 +44,7 @@ def test_add_command_success():
 
 
 def test_add_command_no_check_conflict_flag():
-    with patch("ical.cli.core_add_event", return_value={"id": "evt-2", "title": "t", "start": "s", "end": "e", "calendar": "c"}) as mock_add:
+    with patch("ical.calendar.add_event", return_value={"id": "evt-2", "title": "t", "start": "s", "end": "e", "calendar": "c"}) as mock_add:
         result = runner.invoke(
             app,
             [
@@ -60,24 +60,24 @@ def test_add_command_no_check_conflict_flag():
 
 
 def test_add_command_conflict_exits_nonzero():
-    with patch("ical.cli.core_add_event", side_effect=ValueError("Conflict detected with existing event(s): Therapy")):
+    with patch("ical.calendar.add_event", side_effect=ValueError("Conflict detected with existing event(s): Therapy")):
         result = runner.invoke(app, ["add", "--title", "t", "--start", "s", "--end", "e"])
     assert result.exit_code == 1
-    assert "Conflict Warning" in result.stdout
-    assert "Therapy" in result.stdout
+    assert "Could not create event" in result.stderr
+    assert "Therapy" in result.stderr
 
 
 def test_add_command_generic_error_exits_nonzero():
-    with patch("ical.cli.core_add_event", side_effect=RuntimeError("boom")):
+    with patch("ical.calendar.add_event", side_effect=RuntimeError("boom")):
         result = runner.invoke(app, ["add", "--title", "t", "--start", "s", "--end", "e"])
     assert result.exit_code == 1
-    assert "Error creating event" in result.stdout
+    assert "Could not create event" in result.stderr
 
 
 def test_list_command_json_output():
     events = [{"title": "Standup", "start": None, "end": None, "start_str": "Mon 9am", "end_str": "Mon 9:15am"}]
-    with patch("ical.cli.core_get_events", return_value=events):
-        result = runner.invoke(app, ["list", "--calendar", "Work", "--json"])
+    with patch("ical.calendar.get_events", return_value=events):
+        result = runner.invoke(app, ["list", "--calendar", "Work", "-j"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["calendar"] == "Work"
@@ -99,7 +99,7 @@ def test_list_command_json_output_with_real_datetimes():
             "end_str": "Mon 9:15am",
         }
     ]
-    with patch("ical.cli.core_get_events", return_value=events):
+    with patch("ical.calendar.get_events", return_value=events):
         result = runner.invoke(app, ["list", "--calendar", "Work", "--json"])
     assert result.exit_code == 0
     assert "Error listing events" not in result.stdout
@@ -109,7 +109,7 @@ def test_list_command_json_output_with_real_datetimes():
 
 def test_list_command_table_output():
     events = [{"title": "Standup", "start": None, "end": None, "start_str": "Mon 9am", "end_str": "Mon 9:15am"}]
-    with patch("ical.cli.core_get_events", return_value=events):
+    with patch("ical.calendar.get_events", return_value=events):
         result = runner.invoke(app, ["list"])
     assert result.exit_code == 0
     assert "Standup" in result.stdout
@@ -117,14 +117,14 @@ def test_list_command_table_output():
 
 
 def test_list_command_handles_error():
-    with patch("ical.cli.core_get_events", side_effect=RuntimeError("Calendar app crashed")):
+    with patch("ical.calendar.get_events", side_effect=RuntimeError("Calendar app crashed")):
         result = runner.invoke(app, ["list"])
-    assert result.exit_code == 0
-    assert "Error listing events" in result.stdout
+    assert result.exit_code == 1
+    assert "Error listing events" in result.stderr
 
 
 def test_mcp_command_runs_server():
-    with patch("ical.cli.run_server") as mock_run_server:
+    with patch("ical.mcp.run_server") as mock_run_server:
         result = runner.invoke(app, ["mcp"])
     assert result.exit_code == 0
     mock_run_server.assert_called_once()
@@ -155,3 +155,11 @@ def test_no_args_shows_help():
     result = runner.invoke(app, [])
     assert result.exit_code == 2
     assert "ical" in result.stdout
+
+
+def test_help_contract_at_root_and_agent_group():
+    for args in (["-h"], ["--help"], ["agent", "-h"], ["agent", "--help"]):
+        result = runner.invoke(app, args)
+        assert result.exit_code == 0, result.output
+        assert "--install-completion" not in result.output
+        assert "--show-completion" not in result.output

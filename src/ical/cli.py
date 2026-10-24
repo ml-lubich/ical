@@ -1,12 +1,13 @@
-import sys
+"""Command line interface for macOS Calendar.app."""
+
 import json
+import sys
+from typing import Annotated
+
 import typer
 from rich.console import Console
 from rich.table import Table
-from typing import Optional, List
-from ical.calendar import run_applescript, add_event as core_add_event, get_events as core_get_events
-from ical.mcp import run_server
-from ical import agent
+
 from ical import __version__
 
 EPILOG = """\
@@ -22,49 +23,62 @@ Agents: run `ical agent guide` for a playbook, `ical agent schema` for JSON cont
 
 app = typer.Typer(
     name="ical",
-    help="macOS Calendar.app CLI & MCP — agent-friendly calendar management.",
+    help="macOS Calendar.app CLI and MCP server.",
     epilog=EPILOG,
     no_args_is_help=True,
+    add_completion=False,
     rich_markup_mode="rich",
-    context_settings={"help_option_names": ["-h", "--help"]}
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
-
 agent_app = typer.Typer(
     name="agent",
-    help="Machine-readable schema and playbook for LLM/automation use.",
+    help="Show the machine-readable schema and playbook.",
     no_args_is_help=True,
+    add_completion=False,
     rich_markup_mode="rich",
-    context_settings={"help_option_names": ["-h", "--help"]}
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 app.add_typer(agent_app, name="agent")
 
 console = Console()
 
+
 @app.command("calendars")
-def list_calendars():
+def list_calendars() -> None:
     """List available calendars in Calendar.app."""
-    script = 'tell application "Calendar" to get name of calendars'
-    cals = run_applescript(script).split(", ")
+    from ical.calendar import run_applescript
+
+    try:
+        calendars = run_applescript(
+            'tell application "Calendar" to get name of calendars'
+        ).split(", ")
+    except Exception as err:
+        typer.echo(f"Error listing calendars: {err}", err=True)
+        raise typer.Exit(code=1) from err
+
     table = Table(title="Calendars")
     table.add_column("Name", style="cyan")
-    for cal in cals:
-        table.add_row(cal)
+    for calendar in calendars:
+        table.add_row(calendar)
     console.print(table)
+
 
 @app.command("add")
 def add_event(
-    title: str = typer.Option(..., "--title", "-t", help="Event title/summary"),
-    start: str = typer.Option(..., "--start", "-s", help="Start time (e.g. 'Monday, August 10, 2026 at 1:00:00 PM')"),
-    end: str = typer.Option(..., "--end", "-e", help="End time (e.g. 'Monday, August 10, 2026 at 2:00:00 PM')"),
-    calendar: str = typer.Option("Calendar", "--calendar", "-c", help="Calendar name"),
-    attendee: Optional[List[str]] = typer.Option(None, "--attendee", "-a", help="Attendee email address(es) to invite"),
-    description: str = typer.Option("", "--description", "-d", help="Event description"),
-    location: str = typer.Option("", "--location", "-l", help="Event location"),
-    check_conflict: bool = typer.Option(True, "--check-conflict/--no-check-conflict", help="Enable/disable conflict detection")
-):
-    """Add a calendar event with conflict checking and attendee invites."""
+    title: Annotated[str, typer.Option("--title", "-t", help="Event title")],
+    start: Annotated[str, typer.Option("--start", "-s", help="Start date and time")],
+    end: Annotated[str, typer.Option("--end", "-e", help="End date and time")],
+    calendar: Annotated[str, typer.Option("--calendar", "-c", help="Calendar name")] = "Calendar",
+    attendee: Annotated[list[str] | None, typer.Option("--attendee", "-a", help="Attendee email; repeat for multiple attendees")] = None,
+    description: Annotated[str, typer.Option("--description", "-d", help="Event description")] = "",
+    location: Annotated[str, typer.Option("--location", "-l", help="Event location")] = "",
+    check_conflict: Annotated[bool, typer.Option("--check-conflict/--no-check-conflict", help="Check for overlapping events")] = True,
+) -> None:
+    """Create a calendar event and invite attendees."""
+    from ical.calendar import add_event as core_add_event
+
     try:
-        res = core_add_event(
+        result = core_add_event(
             title=title,
             start=start,
             end=end,
@@ -72,60 +86,77 @@ def add_event(
             attendee=attendee,
             description=description,
             location=location,
-            check_conflict=check_conflict
+            check_conflict=check_conflict,
         )
-        console.print(f"[bold green]✓ Event created![/bold green] ID: {res['id']}")
-    except ValueError as err:
-        console.print(f"[bold red]Conflict Warning:[/bold red] {err}")
-        raise typer.Exit(code=1)
+    except (ValueError, RuntimeError) as err:
+        typer.echo(f"Could not create event: {err}", err=True)
+        raise typer.Exit(code=1) from err
     except Exception as err:
-        console.print(f"[bold red]Error creating event:[/bold red] {err}")
-        raise typer.Exit(code=1)
+        typer.echo(f"Unexpected error creating event: {err}", err=True)
+        raise typer.Exit(code=1) from err
+
+    console.print(f"[bold green]Event created.[/bold green] ID: {result['id']}")
+
 
 @app.command("list")
 def list_events(
-    calendar: str = typer.Option("Calendar", "--calendar", "-c", help="Calendar name"),
-    as_json: bool = typer.Option(False, "--json", help="Emit JSON output")
-):
-    """List events in a specified calendar."""
+    calendar: Annotated[str, typer.Option("--calendar", "-c", help="Calendar name")] = "Calendar",
+    as_json: Annotated[bool, typer.Option("--json", "-j", help="Emit JSON output")] = False,
+) -> None:
+    """List events in a calendar."""
+    from ical.calendar import get_events
+
     try:
-        events = core_get_events(calendar)
+        events = get_events(calendar)
+        json_events = [
+            {"title": event["title"], "start": event["start_str"], "end": event["end_str"]}
+            for event in events
+        ]
         if as_json:
-            json_events = [
-                {"title": e["title"], "start": e["start_str"], "end": e["end_str"]}
-                for e in events
-            ]
-            console.print_json(data={"calendar": calendar, "events": json_events})
+            typer.echo(json.dumps({"calendar": calendar, "events": json_events}, ensure_ascii=False))
             return
+
         table = Table(title=f"Events in {calendar}")
         table.add_column("Title", style="bold white")
         table.add_column("Start", style="green")
         table.add_column("End", style="yellow")
-        for evt in events:
-            table.add_row(evt["title"], evt["start_str"], evt["end_str"])
+        for event in events:
+            table.add_row(event["title"], event["start_str"], event["end_str"])
         console.print(table)
     except Exception as err:
-        console.print(f"[bold red]Error listing events:[/bold red] {err}")
+        typer.echo(f"Error listing events: {err}", err=True)
+        raise typer.Exit(code=1) from err
+
 
 @app.command("mcp")
-def serve_mcp():
-    """Run FastMCP server over stdio for AI agent integration."""
+def serve_mcp() -> None:
+    """Run the FastMCP server over stdio."""
+    from ical.mcp import run_server
+
     run_server()
+
 
 @agent_app.command("schema")
 def agent_schema_cmd() -> None:
-    """Print JSON command contract for LLM agents."""
-    console.print_json(data=agent.build_schema())
+    """Print the JSON command contract for agents."""
+    from ical.agent import build_schema
+
+    console.print_json(data=build_schema())
+
 
 @agent_app.command("guide")
 def agent_guide_cmd() -> None:
-    """Print markdown playbook for LLM agents."""
-    sys.stdout.write(agent.build_guide())
+    """Print the Markdown agent playbook."""
+    from ical.agent import build_guide
+
+    sys.stdout.write(build_guide())
+
 
 @app.command("version")
-def version():
-    """Print ical version."""
-    console.print(f"ical version {__version__} (LLM-Native Typer CLI + FastMCP)")
+def version() -> None:
+    """Print the installed version."""
+    typer.echo(f"ical {__version__}")
+
 
 if __name__ == "__main__":
     app()
