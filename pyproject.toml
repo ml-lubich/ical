@@ -45,6 +45,10 @@ ical-mcp = "ical.mcp:run_server"
 [tool.coverage.report]
 fail_under = 80
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=ical --cov-report=term-missing --cov-fail-under=80"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/ical"]
 

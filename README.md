@@ -48,6 +48,6 @@ If `ical-mcp` isn't on `PATH`, use its absolute path from `uv tool dir --bin`. E
 
 ## Testing
 ```bash
-uv run --extra dev pytest --cov=ical --cov-report=term-missing
+uv run --extra dev pytest
 ```
-Coverage has an enforced 80% minimum. Tests mock only the OS boundary (`subprocess`/`osascript`); parsing, conflict detection, CLI dispatch, and MCP tool functions run for real.
+The default test command reports coverage and enforces an 80% minimum. Tests mock only the OS boundary (`subprocess`/`osascript`); parsing, conflict detection, CLI dispatch, and MCP tool functions run for real.
