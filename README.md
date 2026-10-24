@@ -21,18 +21,42 @@ ical -h
 ical agent -h
 ical calendars
 ical add --title "Team Sync" --start "Monday, August 10, 2026 at 1:00:00 PM" --end "Monday, August 10, 2026 at 2:00:00 PM" -a guest@example.com -c you@example.com
+ical add --title "Team Sync" --start "Monday, August 10, 2026 at 1:00:00 PM" --end "Monday, August 10, 2026 at 2:00:00 PM" -a guest@example.com -c you@example.com --json
+ical show --id EVENT_ID --calendar you@example.com --json
 ical list -c you@example.com
 ical list -c you@example.com -j
 ```
 
 Every command and command group accepts both `-h` and `--help`; generated
 shell-completion flags are disabled so help lists the supported command
-surface. `ical list` prints a human-readable table; `-j`/`--json` prints one
-JSON object to stdout. CLI errors are printed to stderr and return a nonzero
-exit status.
+surface. `ical list` prints a human-readable table; `-j`/`--json` prints JSON
+to stdout. `ical add` verifies the created event by reading it back from
+Calendar before reporting success. Human output summarizes the verified event
+and attendee RSVP status. With `--json`, it returns a stable object with
+`status: "verified"` and an `event` containing the event ID, title, ISO 8601
+start and end, calendar, and attendees (`email` and `status`). A post-write verification
+failure reports `status: "created_unverified"`, along with the event ID and
+error. `unknown` RSVP status means
+Calendar has no recorded response from that attendee yet; it does not mean
+they accepted. CLI errors are printed to stderr and return a nonzero exit
+status.
+
+Every Calendar AppleScript call has a 20-second timeout. Calendar failures,
+timeouts, and failed event lookups are reported as errors; `ical list` does not
+turn an automation failure into an empty calendar. If creation times out
+before Calendar returns an ID, JSON reports `status: "write_outcome_unknown"`
+and an error. Search for the event with `ical list` before retrying. If the
+conflict check times out before creation starts, JSON reports
+`status: "not_created"`; it is safe to retry after Calendar responds. If an ID
+is available but read-back failed, use `ical show --id EVENT_ID --calendar
+CALENDAR --json` to verify it. **Do not retry the add until confirming the
+event is absent**, or you may send a duplicate invitation. `ical show` is
+read-only and returns the same verified event envelope as `ical add`. A JSON
+lookup failure returns `status: "verification_failed"`, the requested event
+ID, and the error; retry the read after checking Calendar, never the add.
 
 ## MCP (for AI agents)
-`ical-mcp` runs a FastMCP server over stdio exposing `list_calendars`, `list_events`, and `add_calendar_event`. The backward-compatible `ical mcp` command runs the same server. Point any MCP-compatible client (Claude Desktop, Claude Code, etc.) at the standalone executable:
+`ical-mcp` is the standalone FastMCP server command for stdio clients. It exposes `list_calendars`, `list_events`, and `add_calendar_event`. The backward-compatible `ical mcp` command runs the same server. Point any MCP-compatible client (Claude Desktop, Claude Code, etc.) at the standalone executable:
 ```json
 {
   "mcpServers": {
@@ -44,7 +68,9 @@ exit status.
 ```
 If `ical-mcp` isn't on `PATH`, use its absolute path from `uv tool dir --bin`. Existing MCP configs using `ical` with `args: ["mcp"]` continue to work.
 
-**Known limitation:** macOS Calendar's AppleScript scripting bridge is slow for calendars with many recurring events — `ical list`/`list_events` can take a long time (or appear to hang) on such calendars, independent of event count reported by `ical calendars`. This is a limitation of AppleScript's Calendar.app automation, not of this tool's parsing.
+macOS Calendar's AppleScript scripting bridge can be slow for calendars with
+many recurring events. Calls now stop after the bounded timeout and return an
+actionable error instead of appearing to hang indefinitely.
 
 ## Testing
 ```bash

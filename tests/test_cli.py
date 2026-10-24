@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 
 from ical.cli import app
 from ical import __version__
+from ical.calendar import CalendarTimeoutError
 
 runner = CliRunner()
 
@@ -22,7 +23,10 @@ def test_add_command_success():
     with patch(
         "ical.calendar.add_event",
         return_value={"id": "evt-1", "title": "Standup", "start": "s", "end": "e", "calendar": "Work"},
-    ) as mock_add:
+    ) as mock_add, patch(
+        "ical.calendar.get_event_details",
+        return_value={"id": "evt-1", "title": "Standup", "start": "Mon 9am", "end": "Mon 9:15am", "calendar": "Work", "attendees": [{"email": "a@example.com", "status": "unknown"}, {"email": "b@example.com", "status": "accepted"}]},
+    ) as mock_get:
         result = runner.invoke(
             app,
             [
@@ -36,15 +40,20 @@ def test_add_command_success():
             ],
         )
     assert result.exit_code == 0
-    assert "Event created" in result.stdout
+    assert "Event created and verified" in result.stdout
     assert "evt-1" in result.stdout
+    assert "a@example.com" in result.stdout
+    assert "unknown" in result.stdout
+    mock_get.assert_called_once_with("Work", "evt-1")
     kwargs = mock_add.call_args.kwargs
     assert kwargs["attendee"] == ["a@example.com", "b@example.com"]
     assert kwargs["check_conflict"] is True
 
 
 def test_add_command_no_check_conflict_flag():
-    with patch("ical.calendar.add_event", return_value={"id": "evt-2", "title": "t", "start": "s", "end": "e", "calendar": "c"}) as mock_add:
+    with patch("ical.calendar.add_event", return_value={"id": "evt-2", "title": "t", "start": "s", "end": "e", "calendar": "c"}) as mock_add, patch(
+        "ical.calendar.get_event_details", return_value={"id": "evt-2", "title": "t", "start": "s", "end": "e", "calendar": "c", "attendees": []}
+    ):
         result = runner.invoke(
             app,
             [
@@ -72,6 +81,96 @@ def test_add_command_generic_error_exits_nonzero():
         result = runner.invoke(app, ["add", "--title", "t", "--start", "s", "--end", "e"])
     assert result.exit_code == 1
     assert "Could not create event" in result.stderr
+
+
+def test_add_readback_failure_keeps_id_and_does_not_retry():
+    with patch("ical.calendar.add_event", return_value={"id": "evt-uncertain", "title": "t", "start": "s", "end": "e", "calendar": "c"}) as mock_add, patch(
+        "ical.calendar.get_event_details", side_effect=TimeoutError("Calendar did not respond in time")
+    ):
+        result = runner.invoke(app, ["add", "-t", "t", "-s", "s", "-e", "e"])
+    assert result.exit_code == 1
+    assert "created, but verification failed" in result.stderr
+    assert "evt-uncertain" in result.stderr
+    mock_add.assert_called_once()
+
+
+def test_add_json_has_stable_verified_payload():
+    event = {"id": "evt-3", "title": "Planning", "start": "Mon 9am", "end": "Mon 10am", "calendar": "Work", "attendees": [{"email": "a@example.com", "status": "unknown"}]}
+    with patch("ical.calendar.add_event", return_value=event), patch("ical.calendar.get_event_details", return_value=event):
+        result = runner.invoke(app, ["add", "-t", "Planning", "-s", "s", "-e", "e", "-c", "Work", "-a", "a@example.com", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload == {"status": "verified", "event": event}
+
+
+def test_add_timeout_reports_unknown_write_outcome_without_retry():
+    with patch("ical.calendar.add_event", side_effect=CalendarTimeoutError("Creating event timed out", write_may_have_succeeded=True)) as mock_add:
+        result = runner.invoke(app, ["add", "-t", "t", "-s", "s", "-e", "e", "--json"])
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload == {"status": "write_outcome_unknown", "error": "Creating event timed out"}
+    mock_add.assert_called_once()
+
+
+def test_add_timeout_human_output_warns_not_to_retry():
+    with patch("ical.calendar.add_event", side_effect=CalendarTimeoutError("Creating event timed out", write_may_have_succeeded=True)):
+        result = runner.invoke(app, ["add", "-t", "t", "-s", "s", "-e", "e"])
+    assert result.exit_code == 1
+    assert "outcome is unknown" in result.stderr
+    assert "Do not retry" in result.stderr
+
+
+def test_add_precheck_timeout_reports_no_event_created_json():
+    with patch("ical.calendar.add_event", side_effect=CalendarTimeoutError("Reading conflict window timed out")) as mock_add:
+        result = runner.invoke(app, ["add", "-t", "t", "-s", "s", "-e", "e", "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.stdout) == {
+        "status": "not_created",
+        "stage": "conflict_check",
+        "error": "Reading conflict window timed out",
+    }
+    mock_add.assert_called_once()
+
+
+def test_add_precheck_timeout_human_says_no_event_was_created():
+    with patch("ical.calendar.add_event", side_effect=CalendarTimeoutError("Reading conflict window timed out")):
+        result = runner.invoke(app, ["add", "-t", "t", "-s", "s", "-e", "e"])
+    assert result.exit_code == 1
+    assert "conflict check timed out" in result.stderr
+    assert "No event was created" in result.stderr
+    assert "retry after Calendar responds" in result.stderr
+
+
+def test_show_event_json_output_is_read_only_and_complete():
+    event = {
+        "id": "evt-joe", "title": "Work session with Joe", "start": datetime.datetime(2026, 10, 24, 11),
+        "end": datetime.datetime(2026, 10, 24, 14), "start_str": "Sat 11am", "end_str": "Sat 2pm",
+        "calendar": "Personal", "attendees": [{"email": "jheupler@berkeley.edu", "status": "unknown"}],
+    }
+    with patch("ical.calendar.get_event_details", return_value=event) as mock_show, patch("ical.calendar.add_event") as mock_add:
+        result = runner.invoke(app, ["show", "--id", "evt-joe", "--calendar", "Personal", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "status": "verified",
+        "event": {
+            "id": "evt-joe", "title": "Work session with Joe", "start": "2026-10-24T11:00:00",
+            "end": "2026-10-24T14:00:00", "calendar": "Personal",
+            "attendees": [{"email": "jheupler@berkeley.edu", "status": "unknown"}],
+        },
+    }
+    mock_show.assert_called_once_with("Personal", "evt-joe")
+    mock_add.assert_not_called()
+
+
+def test_show_event_human_output_includes_attendee_status():
+    event = {"id": "evt-joe", "title": "Work session with Joe", "start": "s", "end": "e", "start_str": "Sat 11am", "end_str": "Sat 2pm", "calendar": "Personal", "attendees": [{"email": "jheupler@berkeley.edu", "status": "unknown"}]}
+    with patch("ical.calendar.get_event_details", return_value=event):
+        result = runner.invoke(app, ["show", "--id", "evt-joe", "--calendar", "Personal"])
+    assert result.exit_code == 0
+    assert "Work session with Joe" in result.stdout
+    assert "jheupler@berkeley.edu" in result.stdout
+    assert "unknown" in result.stdout
 
 
 def test_list_command_json_output():

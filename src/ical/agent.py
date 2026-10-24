@@ -3,21 +3,30 @@ import json
 def build_schema() -> dict:
     return {
         "name": "ical",
-        "description": "macOS Calendar.app CLI & MCP tool",
+        "description": "macOS Calendar.app CLI and MCP tool with bounded operations and verified invite creation",
+        "apple_script_timeout_seconds": 20,
         "commands": {
             "calendars": {
                 "description": "List available calendars",
                 "args": []
             },
             "list": {
-                "description": "List events in a calendar",
+                "description": "List events in a calendar; Calendar automation errors are reported, never returned as an empty calendar",
                 "flags": {
                     "--calendar": "Calendar name (default: Calendar)",
                     "--json": "Output JSON"
                 }
             },
+            "show": {
+                "description": "Read one event by Calendar ID, including invitee RSVP status; use to verify an uncertain write",
+                "flags": {
+                    "--id": "Calendar event ID (required)",
+                    "--calendar": "Calendar name containing the event (default: Calendar)",
+                    "--json": "Return a machine-readable verified result"
+                }
+            },
             "add": {
-                "description": "Add event with automatic conflict detection and attendee invites",
+                "description": "Create an event, check for conflicts, invite attendees, then read the event back by ID before reporting success",
                 "flags": {
                     "--title": "Event title (required)",
                     "--start": "Start time string (required)",
@@ -26,13 +35,41 @@ def build_schema() -> dict:
                     "--attendee": "Email address of attendee (repeatable)",
                     "--description": "Event description",
                     "--location": "Event location",
-                    "--no-check-conflict": "Disable conflict detection"
+                    "--no-check-conflict": "Disable conflict detection",
+                    "--json": "Return a machine-readable verified result"
                 }
             },
             "mcp": {
                 "description": "Run FastMCP stdio server"
             }
-        }
+        },
+        "add_result": {
+            "status": ["verified", "created_unverified", "write_outcome_unknown", "not_created"],
+            "event": {
+                "fields": ["id", "title", "start", "end", "calendar", "attendees"],
+                "start": "ISO 8601 string",
+                "end": "ISO 8601 string",
+                "attendees": {"fields": ["email", "status"], "status_values": ["accepted", "declined", "tentative", "unknown"]}
+            },
+            "unverified_fields": ["status", "id", "error"],
+            "write_outcome_unknown_fields": ["status", "error"],
+            "not_created_fields": ["status", "stage", "error"],
+            "show_result": {
+                "success": {"status": "verified", "event": "same event object as add"},
+                "failure": {"status": "verification_failed", "id": "requested event ID", "error": "reason"}
+            },
+            "note": "Calendar attendee status describes RSVP state. An unknown status means no response is recorded; it does not mean accepted. created_unverified means the write may have succeeded but read-back failed; preserve its ID and check with `ical show`. write_outcome_unknown means event creation timed out before its ID was returned; search the calendar with `ical list` before retrying."
+        },
+        "errors": {
+            "timeout": "Calendar automation exceeded its bounded timeout. The outcome of a write may be uncertain.",
+            "created_unverified": "The event may have been created, but read-back did not confirm it. Preserve the event ID and inspect Calendar before retrying.",
+            "write_outcome_unknown": "Event creation timed out before an ID was returned. The write may have succeeded. Search with `ical list`; do not retry until you confirm the event is absent.",
+            "not_created": "The conflict check timed out before the event write began. No event was created; retry after Calendar responds.",
+            "verification_failed": "Read-only event lookup failed. The CLI returns the event ID and error; check Calendar and retry the read, not the create.",
+            "conflict": "An overlapping event was found; no event was created.",
+            "calendar_error": "Calendar automation failed. The CLI returns a nonzero exit status and writes the error to stderr."
+        },
+        "retry_policy": "After write_outcome_unknown, use `ical list` to search for the event. After created_unverified, use `ical show --id ID --calendar CALENDAR`. Do not retry either write until confirming the event is absent. A not_created conflict-check timeout is safe to retry after Calendar responds."
     }
 
 def build_guide() -> str:
@@ -43,7 +80,29 @@ def build_guide() -> str:
 ## Common Operations:
 - List calendars: `ical calendars`
 - List events in calendar: `ical list -c you@example.com --json`
-- Add event with conflict check & invites:
+- Read one event by its Calendar ID: `ical show --id EVENT_ID --calendar you@example.com --json`
+- Add and verify an event with conflict check & invites:
   `ical add -t "Meeting" -s "Monday, August 10, 2026 at 1:00 PM" -e "Monday, August 10, 2026 at 2:00 PM" -c "you@example.com" -a "user@example.com"`
-- Launch FastMCP stdio server for tool calling: `ical mcp`
+- Get a machine-readable verified result:
+  `ical add -t "Meeting" -s "Monday, August 10, 2026 at 1:00 PM" -e "Monday, August 10, 2026 at 2:00 PM" -c "you@example.com" -a "user@example.com" --json`
+- Launch FastMCP stdio server for tool calling: `ical-mcp`
+- Compatibility alias: `ical mcp`
+
+`ical add` only reports verified success after reading the created event back
+by its Calendar ID. The JSON success object has `status: "verified"` and an
+`event` with `id`, `title`, ISO 8601 `start` and `end`, `calendar`, and
+`attendees`; each attendee has an `email` and RSVP `status`. An `unknown` RSVP means no response
+has been recorded, not that the invite was accepted.
+
+Calendar automation calls have a 20-second timeout. If the conflict check times
+out, `ical add` returns `not_created`; no event write was attempted, so retry
+after Calendar responds. If the create write times out before
+Calendar returns an event ID, JSON reports `status: "write_outcome_unknown"`
+with an error. Search with `ical list` before retrying. If creation returns an
+ID but read-back fails, the result is `created_unverified`; inspect it with
+`ical show --id EVENT_ID --calendar CALENDAR`. **Do not retry either write
+until confirming the event is absent**, to avoid a duplicate invite. `ical
+show` is read-only and returns the same verified event envelope as `ical add`.
+Calendar read failures are errors rather than empty event lists. See `ical
+agent schema` for the machine-readable result and error contract.
 """

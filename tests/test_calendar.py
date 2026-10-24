@@ -11,6 +11,10 @@ from ical.calendar import (
     get_events,
     check_conflicts,
     add_event,
+    CalendarTimeoutError,
+    CalendarAutomationError,
+    EventNotFoundError,
+    get_event_details,
 )
 
 
@@ -25,12 +29,32 @@ def test_run_applescript_success():
     assert args[0][0] == "osascript"
     assert kwargs["capture_output"] is True
     assert kwargs["text"] is True
+    assert kwargs["timeout"] > 0
+
+
+def test_run_applescript_timeout_is_actionable():
+    with patch("ical.calendar.subprocess.run", side_effect=subprocess.TimeoutExpired("osascript", 20)):
+        with pytest.raises(CalendarTimeoutError, match="timed out") as exc:
+            run_applescript("slow script", operation="reading events")
+    assert exc.value.write_may_have_succeeded is False
+
+
+def test_add_timeout_marks_write_outcome_unknown():
+    with patch("ical.calendar.check_conflicts", return_value=[]), \
+         patch("ical.calendar.subprocess.run", side_effect=subprocess.TimeoutExpired("osascript", 20)):
+        with pytest.raises(CalendarTimeoutError) as exc:
+            add_event(
+                title="Standup",
+                start="Monday, August 10, 2026 at 9:00:00 AM",
+                end="Monday, August 10, 2026 at 9:15:00 AM",
+            )
+    assert exc.value.write_may_have_succeeded is True
 
 
 def test_run_applescript_failure_raises():
     fake = MagicMock(returncode=1, stdout="", stderr=" execution error: boom ")
     with patch("ical.calendar.subprocess.run", return_value=fake):
-        with pytest.raises(RuntimeError, match="execution error: boom"):
+        with pytest.raises(CalendarAutomationError, match="execution error: boom"):
             run_applescript("bad script")
 
 
@@ -88,10 +112,26 @@ def test_get_events_skips_lines_with_unparseable_dates():
     assert events == []
 
 
-def test_get_events_returns_empty_on_applescript_error():
+def test_get_events_propagates_applescript_error():
     with patch("ical.calendar.run_applescript", side_effect=RuntimeError("Calendar not running")):
-        events = get_events("Work")
-    assert events == []
+        with pytest.raises(RuntimeError, match="Calendar not running"):
+            get_events("Work")
+
+
+def test_get_event_details_returns_id_and_attendee_status():
+    output = "evt-1\nStandup\nMonday, August 10, 2026 at 9:00:00 AM\nMonday, August 10, 2026 at 9:15:00 AM\nalice@example.com\x1faccepted"
+    with patch("ical.calendar.run_applescript", return_value=output) as mock_run:
+        event = get_event_details("Work", "evt-1")
+    assert event["id"] == "evt-1"
+    assert event["title"] == "Standup"
+    assert event["attendees"] == [{"email": "alice@example.com", "status": "accepted"}]
+    assert 'tell calendar "Work"' in mock_run.call_args.args[0]
+
+
+def test_get_event_details_missing_event_is_distinct():
+    with patch("ical.calendar.run_applescript", return_value=""):
+        with pytest.raises(EventNotFoundError, match="not found"):
+            get_event_details("Work", "missing")
 
 
 # ---- check_conflicts ----
