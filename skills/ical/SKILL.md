@@ -32,7 +32,8 @@ ical calendars                    # List available calendars in Calendar.app
 ical list -c "Calendar" [--json]  # List events in a calendar (table or JSON)
 ical add -t TITLE -s START -e END [-c CALENDAR] [-a ATTENDEE ...] \
          [-d DESCRIPTION] [-l LOCATION] [--no-check-conflict]
-ical mcp                          # Run the FastMCP server over stdio
+ical mcp                          # Run the FastMCP server over stdio (alias)
+ical-mcp                          # Run the FastMCP server over stdio
 ical agent guide                  # Playbook for LLM/automation use
 ical agent schema                 # JSON contract for the above
 ical version
@@ -44,24 +45,26 @@ default (`--check-conflict`/`--no-check-conflict`).
 
 ## MCP server
 
-Launch command: `ical mcp` (stdio transport). Exposes 3 tools:
+Launch command: `ical-mcp` (stdio transport). The compatible `ical mcp` alias
+continues to run the same server. Exposes 3 tools:
 `list_calendars`, `list_events(calendar)`, `add_calendar_event(title, start, end, calendar, attendees, description, location, check_conflict)`.
 
 Register with Claude Code:
 ```bash
-claude mcp add ical -- ical mcp
+claude mcp add ical -- ical-mcp
 ```
 
 Or manually in an MCP client config:
 ```json
 {
   "mcpServers": {
-    "ical": { "command": "ical", "args": ["mcp"] }
+    "ical": { "command": "ical-mcp" }
   }
 }
 ```
 
-If `ical` isn't on `PATH`, use the absolute path from `uv tool dir --bin`.
+If `ical-mcp` isn't on `PATH`, use the absolute path from `uv tool dir --bin`.
+Existing configurations using `ical` with `args: ["mcp"]` remain supported.
 
 **Known limitation:** `ical list` / `list_events` can be slow on calendars with
 many recurring events — this is a macOS Calendar AppleScript scripting-bridge

@@ -40,6 +40,10 @@ dev = [
 
 [project.scripts]
 ical = "ical.cli:app"
+ical-mcp = "ical.mcp:run_server"
+
+[tool.coverage.report]
+fail_under = 80
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ical"]

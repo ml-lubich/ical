@@ -1,3 +1,5 @@
+import tomllib
+from pathlib import Path
 from unittest.mock import patch
 
 from ical.mcp import list_calendars, list_events, add_calendar_event, run_server
@@ -62,3 +64,8 @@ def test_run_server_invokes_stdio_transport():
     with patch("ical.mcp.mcp") as mock_mcp:
         run_server()
     mock_mcp.run.assert_called_once_with(transport="stdio")
+
+
+def test_ical_mcp_entrypoint_targets_run_server():
+    project = tomllib.loads(Path("pyproject.toml").read_text())
+    assert project["project"]["scripts"]["ical-mcp"] == "ical.mcp:run_server"
