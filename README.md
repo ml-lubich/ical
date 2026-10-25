@@ -1,6 +1,6 @@
 # ical CLI
 
-macOS Calendar.app CLI tool — schedule, invite, list, and verify calendar events.
+macOS Calendar.app CLI tool — schedule, invite, list, search, inspect, edit, and delete events.
 
 ## Install
 ```bash
@@ -35,6 +35,9 @@ ical list -c you@example.com --date 2026-10-27
 ical list -c you@example.com --from 2026-10-27 --to 2026-10-31
 ical search courthouse -c you@example.com --date 2026-10-27
 ical show --id EVENT_ID -c you@example.com --json
+ical edit --id EVENT_ID -c you@example.com --title "Updated title"
+ical delete --id EVENT_ID -c you@example.com --yes
+ical update
 ```
 
 Every command and command group accepts both `-h` and `--help`; generated
@@ -74,6 +77,15 @@ locations. Search accepts the same optional `--date` or inclusive `--from` /
 `--to` filters as `list`, plus `--limit` (default 20). Search results include
 the Calendar ID and location, so you can pass an ID directly to `show`.
 
+`ical edit --id EVENT_ID` changes only the fields supplied through `--title`,
+`--start`, `--end`, `--location`, and `--description`; omitted fields remain
+unchanged. It verifies the result by reading the event back. If verification
+fails after the write, inspect the event with `show` before retrying.
+`ical delete --id EVENT_ID` requires `--yes` and deletes only that exact ID.
+
+`ical update` upgrades an installed uv tool with `uv tool upgrade ical-mcp`.
+For pip or Homebrew installs, upgrade through that package manager instead.
+
 Start and end values accept natural-language dates and ISO 8601. An explicit
 ISO 8601 UTC offset is converted to the Mac's local calendar time before the
 event is created; numeric date components avoid AppleScript misreading ISO
@@ -98,9 +110,11 @@ ID, and the error; retry the read after checking Calendar, never the add.
 
 ## MCP (for AI agents)
 `ical-mcp` is the standalone FastMCP server command for stdio clients. It
-exposes `list_calendars`, `list_events`, `search_events`, `show_event`, and
-`add_calendar_event`. `list_events` and `search_events` accept optional date
-filters; `show_event` reads any event by ID. The backward-compatible `ical mcp` command runs the same
+exposes `list_calendars`, `list_events`, `search_events`, `show_event`,
+`add_calendar_event`, `edit_calendar_event`, and `delete_calendar_event`.
+`list_events` and `search_events` accept optional date filters; `show_event`
+reads any event by ID; edit preserves omitted fields; delete requires
+`confirm=true`. The backward-compatible `ical mcp` command runs the same
 server. Point any MCP-compatible client (Claude Desktop, Claude Code, etc.) at the standalone executable:
 ```json
 {

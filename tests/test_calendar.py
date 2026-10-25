@@ -417,3 +417,38 @@ def test_add_event_no_attendees():
         )
     script = mock_run.call_args[0][0]
     assert "make new attendee" not in script
+
+
+def test_edit_event_requires_at_least_one_field_without_running_applescript():
+    from ical.calendar import edit_event
+
+    with patch("ical.calendar.run_applescript") as mock_run:
+        with pytest.raises(ValueError, match="At least one"):
+            edit_event("Work", "event-1")
+    mock_run.assert_not_called()
+
+
+def test_edit_event_sets_only_supplied_fields_by_exact_calendar_id():
+    from ical.calendar import edit_event
+
+    with patch("ical.calendar.run_applescript", return_value="event-1") as mock_run:
+        result = edit_event("Work", "event-1", title='Say "hi"', location="Room 4")
+    script = mock_run.call_args.args[0]
+    assert result == {"id": "event-1", "calendar": "Work"}
+    assert 'id is "event-1"' in script
+    assert 'set summary of targetEvent to "Say \\"hi\\""' in script
+    assert 'set location of targetEvent to "Room 4"' in script
+    assert "set description of targetEvent" not in script
+    assert "count of matchingEvents" in script
+
+
+def test_delete_event_deletes_only_exact_id_in_selected_calendar():
+    from ical.calendar import delete_event
+
+    with patch("ical.calendar.run_applescript", return_value="event-1") as mock_run:
+        result = delete_event("Work", "event-1")
+    script = mock_run.call_args.args[0]
+    assert result == {"id": "event-1", "calendar": "Work"}
+    assert 'id is "event-1"' in script
+    assert "count of matchingEvents" in script
+    assert "delete targetEvent" in script

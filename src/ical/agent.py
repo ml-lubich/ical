@@ -48,6 +48,37 @@ def build_schema() -> dict:
                 "optional_text_fields": "location, description, and url are empty strings when Calendar has no value",
                 "attendees": {"fields": ["email", "status"], "status_values": ["accepted", "declined", "tentative", "unknown"]}
             },
+            "edit": {
+                "description": "Edit only explicitly supplied fields on one event ID and verify them",
+                "flags": {
+                    "--id": "Calendar event ID (required)",
+                    "--calendar": "Calendar name (default: Calendar)",
+                    "--title": "Optional replacement title",
+                    "--start": "Optional replacement start date and time",
+                    "--end": "Optional replacement end date and time",
+                    "--location": "Optional replacement location; empty value clears it",
+                    "--description": "Optional replacement description; empty value clears it",
+                    "--json": "Return a machine-readable verified result"
+                },
+                "requires_at_least_one_of": ["--title", "--start", "--end", "--location", "--description"],
+                "omitted_fields": "Preserved",
+                "match_policy": "Exact Calendar event ID in the selected calendar"
+            },
+            "delete": {
+                "description": "Delete one event by Calendar ID",
+                "flags": {
+                    "--id": "Calendar event ID (required)",
+                    "--calendar": "Calendar name (default: Calendar)",
+                    "--yes": "Required explicit confirmation",
+                    "--json": "Return a machine-readable result"
+                },
+                "confirmation_required": True
+            },
+            "update": {
+                "description": "Upgrade the installed ical CLI using uv",
+                "command": ["uv", "tool", "upgrade", "ical-mcp"],
+                "domain_data_mutation": False
+            },
             "add": {
                 "description": "Create an event, check for conflicts, invite attendees, then read the event back by ID before reporting success",
                 "flags": {
@@ -99,6 +130,17 @@ def build_schema() -> dict:
                 "args": {"calendar": "Calendar name", "event_id": "Calendar event ID"},
                 "event_fields": ["id", "title", "start", "end", "calendar", "location", "description", "url", "attendees"]
             },
+            "edit_calendar_event": {
+                "description": "Edit supplied fields on one event ID and verify the result",
+                "args": ["calendar", "event_id", "title?", "start?", "end?", "location?", "description?"],
+                "requires_at_least_one_of": ["title", "start", "end", "location", "description"],
+                "omitted_fields": "Preserved"
+            },
+            "delete_calendar_event": {
+                "description": "Delete one event by Calendar ID with explicit confirmation",
+                "args": ["calendar", "event_id", "confirm"],
+                "confirmation_value": True
+            },
             "search_events": {
                 "description": "Search event titles and locations; optionally restrict to a date or inclusive date range",
                 "args": {
@@ -137,6 +179,9 @@ def build_guide() -> str:
 - Search event titles and locations: `ical search court -c you@example.com --limit 20`
 - Search on a date: `ical search courthouse -c you@example.com --date 2026-10-27`
 - Read any listed event by its Calendar ID: `ical show --id EVENT_ID --calendar you@example.com --json`
+- Edit supplied fields by ID: `ical edit --id EVENT_ID --calendar you@example.com --title "New title"`
+- Delete by ID only after explicit confirmation: `ical delete --id EVENT_ID --calendar you@example.com --yes`
+- Upgrade the installed CLI: `ical update`
 - Add and verify an event with conflict check & invites:
   `ical add -t "Meeting" -s "Monday, August 10, 2026 at 1:00 PM" -e "Monday, August 10, 2026 at 2:00 PM" -c "you@example.com" -a "user@example.com"`
 - Get a machine-readable verified result:
@@ -150,6 +195,11 @@ return IDs; use one with `ical show` to inspect an event created by any app. `sh
 returns title, ISO 8601 start/end, calendar, location, description, URL, and
 attendees. Missing optional text fields are empty strings. The MCP server offers
 the same read path through `list_events`, `search_events`, and `show_event`.
+`ical edit` changes only supplied fields and verifies the result by reading the
+event back. `ical delete` requires `--yes` and always targets a Calendar ID.
+`ical update` upgrades the installed CLI with `uv tool upgrade ical-mcp`; it
+does not edit calendar data. MCP exposes matching `edit_calendar_event` and
+`delete_calendar_event` tools; deletion requires `confirm=true`.
 
 `ical add` only reports verified success after reading the created event back
 by its Calendar ID. The JSON success object has `status: "verified"` and an

@@ -4,10 +4,13 @@ from ical.agent import build_schema, build_guide
 def test_build_schema_structure():
     schema = build_schema()
     assert schema["name"] == "ical"
-    assert set(schema["commands"].keys()) == {"calendars", "list", "search", "show", "add", "mcp"}
+    assert set(schema["commands"].keys()) == {"calendars", "list", "search", "show", "edit", "delete", "update", "add", "mcp"}
     assert "--title" in schema["commands"]["add"]["flags"]
     assert "--calendar" in schema["commands"]["list"]["flags"]
     assert "--date" in schema["commands"]["search"]["flags"]
+    assert schema["commands"]["update"]["domain_data_mutation"] is False
+    assert schema["commands"]["delete"]["confirmation_required"] is True
+    assert "edit_calendar_event" in schema["mcp_tools"]
     assert "--json" in schema["commands"]["add"]["flags"]
     assert set(schema["commands"]["show"]["flags"]) == {"--id", "--calendar", "--json"}
 

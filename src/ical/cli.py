@@ -3,6 +3,7 @@
 import json
 import sys
 import datetime
+import subprocess
 from typing import Annotated
 
 import typer
@@ -209,6 +210,110 @@ def show_event(
         typer.echo(json.dumps({"status": "verified", "event": _event_json(event)}, ensure_ascii=False))
         return
     _print_event(event, "Event verified")
+
+
+@app.command("edit")
+def edit_calendar_event(
+    event_id: Annotated[str, typer.Option("--id", help="Calendar event ID from `ical list` or another source")],
+    calendar: Annotated[str, typer.Option("--calendar", "-c", help="Calendar name")] = "Calendar",
+    title: Annotated[str | None, typer.Option("--title", "-t", help="Replace the event title")] = None,
+    start: Annotated[str | None, typer.Option("--start", "-s", help="Replace the start date and time")] = None,
+    end: Annotated[str | None, typer.Option("--end", "-e", help="Replace the end date and time")] = None,
+    location: Annotated[str | None, typer.Option("--location", "-l", help="Replace the location")] = None,
+    description: Annotated[str | None, typer.Option("--description", "-d", help="Replace the description")] = None,
+    as_json: Annotated[bool, typer.Option("--json", "-j", help="Emit verified event as JSON")] = False,
+) -> None:
+    """Edit explicitly supplied fields on one event ID."""
+    from ical.calendar import edit_event as core_edit_event, get_event_details
+
+    if all(value is None for value in (title, start, end, location, description)):
+        typer.echo("At least one event field must be supplied.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        core_edit_event(
+            calendar, event_id, title=title, start=start, end=end,
+            location=location, description=description,
+        )
+        event = get_event_details(calendar, event_id)
+    except ValueError as err:
+        if as_json:
+            typer.echo(json.dumps({"status": "not_updated", "id": event_id, "error": str(err)}))
+        else:
+            typer.echo(f"Event was not edited: {err}", err=True)
+        raise typer.Exit(code=1) from err
+    except Exception as err:
+        message = (
+            f"Could not verify edit for event {event_id!r}; the change may have succeeded. "
+            f"Inspect it with `ical show --id {event_id} --calendar {calendar}` before retrying. Details: {err}"
+        )
+        if as_json:
+            typer.echo(json.dumps({"status": "updated_unverified", "id": event_id, "error": str(err)}))
+        else:
+            typer.echo(message, err=True)
+        raise typer.Exit(code=1) from err
+
+    if as_json:
+        typer.echo(json.dumps({"status": "verified", "event": _event_json(event)}, ensure_ascii=False))
+    else:
+        _print_event(event, "Event edited and verified")
+
+
+@app.command("delete")
+def delete_calendar_event(
+    event_id: Annotated[str, typer.Option("--id", help="Calendar event ID to delete")],
+    calendar: Annotated[str, typer.Option("--calendar", "-c", help="Calendar name")] = "Calendar",
+    confirm: Annotated[bool, typer.Option("--yes", help="Confirm permanent event deletion")] = False,
+    as_json: Annotated[bool, typer.Option("--json", "-j", help="Emit JSON output")] = False,
+) -> None:
+    """Delete one event by ID after explicit --yes confirmation."""
+    if not confirm:
+        typer.echo("Event deletion requires --yes.", err=True)
+        raise typer.Exit(code=2)
+    from ical.calendar import delete_event as core_delete_event
+
+    from ical.calendar import CalendarTimeoutError
+    try:
+        result = core_delete_event(calendar, event_id)
+    except CalendarTimeoutError as err:
+        if as_json:
+            typer.echo(json.dumps({"status": "delete_outcome_unknown", "id": event_id, "error": str(err)}))
+        else:
+            typer.echo(
+                f"Delete outcome is unknown for {event_id!r}; inspect Calendar before retrying. Details: {err}",
+                err=True,
+            )
+        raise typer.Exit(code=1) from err
+    except Exception as err:
+        typer.echo(f"Could not delete event {event_id!r}: {err}", err=True)
+        raise typer.Exit(code=1) from err
+    if as_json:
+        typer.echo(json.dumps({"status": "deleted", **result}))
+    else:
+        typer.echo(f"Deleted event {result['id']} from {result['calendar']}.")
+
+
+@app.command("update")
+def update_tool() -> None:
+    """Upgrade the installed ical CLI with uv."""
+    try:
+        result = subprocess.run(
+            ["uv", "tool", "upgrade", "ical-mcp"],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except OSError as err:
+        typer.echo(f"Could not run uv tool upgrade: {err}", err=True)
+        raise typer.Exit(code=1) from err
+
+    if result.stdout.strip():
+        typer.echo(result.stdout.strip())
+    if result.returncode:
+        typer.echo(result.stderr.strip() or "uv could not upgrade ical-mcp", err=True)
+        raise typer.Exit(code=1)
+    if not result.stdout.strip():
+        typer.echo("ical-mcp is up to date.")
 
 
 @app.command("list")

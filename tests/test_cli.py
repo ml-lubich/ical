@@ -412,3 +412,67 @@ def test_help_contract_at_root_and_agent_group():
         assert result.exit_code == 0, result.output
         assert "--install-completion" not in result.output
         assert "--show-completion" not in result.output
+
+
+def test_edit_event_delegates_only_supplied_fields():
+    details = {"id": "evt-1", "title": "New title", "start": "start", "end": "end", "calendar": "Work", "attendees": []}
+    with patch("ical.calendar.edit_event", return_value={"id": "evt-1", "calendar": "Work"}) as mock_edit, patch(
+        "ical.calendar.get_event_details", return_value=details,
+    ) as mock_get:
+        result = runner.invoke(app, ["edit", "--id", "evt-1", "--calendar", "Work", "--title", "New title"])
+    assert result.exit_code == 0
+    mock_edit.assert_called_once_with(
+        "Work", "evt-1", title="New title", start=None, end=None,
+        location=None, description=None,
+    )
+    mock_get.assert_called_once_with("Work", "evt-1")
+
+
+def test_edit_event_requires_at_least_one_field():
+    with patch("ical.calendar.edit_event") as mock_edit:
+        result = runner.invoke(app, ["edit", "--id", "evt-1"])
+    assert result.exit_code == 1
+    assert "at least one" in result.stderr.lower()
+    mock_edit.assert_not_called()
+
+
+def test_delete_event_requires_explicit_yes_and_delegates():
+    with patch("ical.calendar.delete_event", return_value={"id": "evt-1", "calendar": "Work"}) as mock_delete:
+        declined = runner.invoke(app, ["delete", "--id", "evt-1", "--calendar", "Work"])
+        assert declined.exit_code != 0
+        mock_delete.assert_not_called()
+        confirmed = runner.invoke(app, ["delete", "--id", "evt-1", "--calendar", "Work", "--yes"])
+    assert confirmed.exit_code == 0
+    assert "evt-1" in confirmed.stdout
+    mock_delete.assert_called_once_with("Work", "evt-1")
+
+
+def test_update_command_runs_uv_tool_upgrade_and_surfaces_output():
+    import subprocess
+
+    with patch("ical.cli.subprocess.run", return_value=subprocess.CompletedProcess(
+        args=["uv", "tool", "upgrade", "ical-mcp"], returncode=0, stdout="Upgraded ical-mcp", stderr="",
+    )) as mock_run:
+        result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    assert "Upgraded ical-mcp" in result.stdout
+    mock_run.assert_called_once_with(
+        ["uv", "tool", "upgrade", "ical-mcp"], capture_output=True, check=False, text=True,
+    )
+
+
+def test_update_command_returns_nonzero_on_upgrade_failure():
+    import subprocess
+
+    with patch("ical.cli.subprocess.run", return_value=subprocess.CompletedProcess(
+        args=["uv", "tool", "upgrade", "ical-mcp"], returncode=2, stdout="", stderr="package not installed",
+    )):
+        result = runner.invoke(app, ["update"])
+    assert result.exit_code == 1
+    assert "package not installed" in result.stderr
+
+
+def test_new_commands_have_nested_help():
+    for command in ("update", "edit", "delete"):
+        result = runner.invoke(app, [command, "-h"])
+        assert result.exit_code == 0

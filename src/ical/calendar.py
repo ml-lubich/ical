@@ -340,6 +340,111 @@ def get_event_details(calendar: str, event_id: str) -> Dict[str, Any]:
         "attendees": attendees,
     }
 
+
+def edit_event(
+    calendar: str,
+    event_id: str,
+    *,
+    title: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    location: Optional[str] = None,
+    description: Optional[str] = None,
+) -> Dict[str, str]:
+    """Change explicitly supplied fields on exactly one event ID."""
+    fields = {
+        "title": title,
+        "start": start,
+        "end": end,
+        "location": location,
+        "description": description,
+    }
+    if all(value is None for value in fields.values()):
+        raise ValueError("At least one event field must be supplied")
+
+    parsed_dates: dict[str, datetime.datetime] = {}
+    for key, value in (("start", start), ("end", end)):
+        if value is not None:
+            parsed_dates[key] = parse_date(value)
+    if parsed_dates.get("start") and parsed_dates.get("end"):
+        if parsed_dates["start"] >= parsed_dates["end"]:
+            raise ValueError("Event start must be before event end")
+
+    setup = ""
+    if "start" in parsed_dates:
+        setup += _applescript_date_setup("updatedStart", parsed_dates["start"])
+    if "end" in parsed_dates:
+        setup += _applescript_date_setup("updatedEnd", parsed_dates["end"])
+
+    assignments: list[str] = []
+    checks: list[str] = []
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if key == "title":
+            assignments.append(f'set summary of targetEvent to "{_escape_applescript(value)}"')
+            checks.append(f'summary of targetEvent is not "{_escape_applescript(value)}"')
+        elif key in ("start", "end"):
+            variable = "updatedStart" if key == "start" else "updatedEnd"
+            prop = "start date" if key == "start" else "end date"
+            assignments.append(f"set {prop} of targetEvent to {variable}")
+            checks.append(f"{prop} of targetEvent is not {variable}")
+        else:
+            prop = "location" if key == "location" else "description"
+            escaped = _escape_applescript(value)
+            assignments.append(f'set {prop} of targetEvent to "{escaped}"')
+            checks.append(f'{prop} of targetEvent is not "{escaped}"')
+
+    checks.append("start date of targetEvent is greater than or equal to end date of targetEvent")
+    check_script = "\n".join(
+        f'if {condition} then error "ICAL_EDIT_VERIFY_FAILED"' for condition in checks
+    )
+    assignments_script = "\n        ".join(assignments)
+    script = f'''tell application "Calendar"
+    tell calendar "{_escape_applescript(calendar)}"
+        {setup}
+        set matchingEvents to every event whose id is "{_escape_applescript(event_id)}"
+        if (count of matchingEvents) is not 1 then error "ICAL_EVENT_NOT_FOUND_OR_AMBIGUOUS"
+        set targetEvent to item 1 of matchingEvents
+        {assignments_script}
+        {check_script}
+        return id of targetEvent as text
+    end tell
+end tell'''
+    result = run_applescript(
+        script,
+        operation=f"Editing event {event_id!r}",
+        write_may_have_succeeded=True,
+    )
+    if result != event_id:
+        raise CalendarAutomationError(
+            f"Calendar returned a different ID while editing {event_id!r}."
+        )
+    return {"id": event_id, "calendar": calendar}
+
+
+def delete_event(calendar: str, event_id: str) -> Dict[str, str]:
+    """Delete exactly one event by ID in the selected calendar."""
+    script = f'''tell application "Calendar"
+    tell calendar "{_escape_applescript(calendar)}"
+        set matchingEvents to every event whose id is "{_escape_applescript(event_id)}"
+        if (count of matchingEvents) is not 1 then error "ICAL_EVENT_NOT_FOUND_OR_AMBIGUOUS"
+        set targetEvent to item 1 of matchingEvents
+        delete targetEvent
+        return "{_escape_applescript(event_id)}"
+    end tell
+end tell'''
+    result = run_applescript(
+        script,
+        operation=f"Deleting event {event_id!r}",
+        write_may_have_succeeded=True,
+    )
+    if result != event_id:
+        raise CalendarAutomationError(
+            f"Calendar returned a different ID while deleting {event_id!r}."
+        )
+    return {"id": event_id, "calendar": calendar}
+
 def check_conflicts(calendar: str, start_dt: datetime.datetime, end_dt: datetime.datetime) -> List[Dict[str, Any]]:
     existing = get_events(calendar, start_before=end_dt, end_after=start_dt)
     conflicts = []

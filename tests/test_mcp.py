@@ -132,3 +132,29 @@ def test_run_server_invokes_stdio_transport():
 def test_ical_mcp_entrypoint_targets_run_server():
     project = tomllib.loads(Path("pyproject.toml").read_text())
     assert project["project"]["scripts"]["ical-mcp"] == "ical.mcp:run_server"
+
+
+def test_edit_calendar_event_tool_delegates_supplied_fields():
+    from ical.mcp import edit_calendar_event
+
+    with patch("ical.mcp.core_edit_event", return_value={"id": "event-1"}) as mock_edit, patch(
+        "ical.mcp.core_get_event_details", return_value={"id": "event-1", "title": "Renamed"},
+    ):
+        result = edit_calendar_event(calendar="Work", event_id="event-1", title="Renamed")
+    assert result == {"id": "event-1", "title": "Renamed"}
+    mock_edit.assert_called_once_with(
+        "Work", "event-1", title="Renamed", start=None, end=None,
+        location=None, description=None,
+    )
+
+
+def test_delete_calendar_event_tool_requires_confirmation():
+    import pytest
+    from ical.mcp import delete_calendar_event
+
+    with pytest.raises(ValueError, match="confirm"):
+        delete_calendar_event(calendar="Work", event_id="event-1")
+    with patch("ical.mcp.core_delete_event", return_value={"id": "event-1"}) as mock_delete:
+        result = delete_calendar_event(calendar="Work", event_id="event-1", confirm=True)
+    assert result == {"id": "event-1"}
+    mock_delete.assert_called_once_with("Work", "event-1")
