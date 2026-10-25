@@ -312,7 +312,7 @@ def test_list_help_documents_single_day_and_range_filters():
     result = runner.invoke(app, ["list", "-h"])
     assert result.exit_code == 0
     for option in ("--date", "--from", "--to", "--calendar", "--json"):
-        assert option in result.stdout
+        assert option in result.output
 
 
 def test_search_command_passes_filters_and_limit_and_keeps_event_identity():
@@ -346,7 +346,7 @@ def test_search_command_requires_query_and_help_documents_filters():
     help_result = runner.invoke(app, ["search", "-h"])
     assert help_result.exit_code == 0
     for option in ("--calendar", "--date", "--from", "--to", "--limit", "--json"):
-        assert option in help_result.stdout
+        assert option in help_result.output
 
 
 def test_search_agent_contract_and_guide_document_query():
