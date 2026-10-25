@@ -53,7 +53,9 @@ status.
 (`YYYY-MM-DD`) to list one local calendar day, or use both `--from` and `--to`
 for an inclusive date range. Date-filtered lists query Calendar.app only for
 events overlapping that window, so they stay focused even when unrelated
-events elsewhere in the calendar cannot be read. `--date` cannot be combined
+events elsewhere in the calendar cannot be read. Matching events are read
+individually, so one unreadable item does not hide other readable events in
+the requested window. `--date` cannot be combined
 with `--from` or `--to`; ranges require both endpoints. `-j`/`--json` keeps the
 same `{ "calendar": ..., "events": [{ "title": ..., "start": ..., "end": ... }] }`
 shape for filtered and unfiltered results.

@@ -135,7 +135,10 @@ def test_get_events_bounded_query_uses_only_overlapping_events_and_escapes_calen
     assert "and end date is greater than queryStart" in script
     assert "set day of queryStart to 27" in script
     assert "set day of queryEnd to 28" in script
-    assert "set summaries to summary of matchingEvents" in script
+    assert "repeat with matchingEvent in matchingEvents" in script
+    assert "set eventSummary to summary of matchingEvent as text" in script
+    assert "on error" in script
+    assert "set summaries to summary of matchingEvents" not in script
     assert "set summaries to summary of every event" not in script
 
 

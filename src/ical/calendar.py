@@ -97,22 +97,46 @@ def get_events(
             "every event whose start date is less than queryEnd "
             "and end date is greater than queryStart"
         )
-    script = f'''
-    tell application "Calendar"
-        tell calendar "{_escape_applescript(calendar)}"
-            {date_setup}
-            set matchingEvents to {event_query}
-            set summaries to summary of matchingEvents
-            set starts to start date of matchingEvents
-            set ends to end date of matchingEvents
+    if start_before is not None:
+        # Query only the requested window, then read matching events one at a
+        # time. Bulk property reads can fail for the entire result if Calendar
+        # contains one malformed event, hiding valid events in the same window.
+        script = f'''
+        tell application "Calendar"
+            tell calendar "{_escape_applescript(calendar)}"
+                {date_setup}
+                set matchingEvents to {event_query}
+                set res to ""
+                repeat with matchingEvent in matchingEvents
+                    try
+                        set eventSummary to summary of matchingEvent as text
+                        set eventStart to start date of matchingEvent as text
+                        set eventEnd to end date of matchingEvent as text
+                        set res to res & eventSummary & " | " & eventStart & " | " & eventEnd & linefeed
+                    on error
+                        -- Skip this unreadable item and preserve the rest of the window.
+                    end try
+                end repeat
+            end tell
         end tell
-    end tell
-    set res to ""
-    repeat with i from 1 to (count of summaries)
-        set res to res & (item i of summaries) & " | " & ((item i of starts) as string) & " | " & ((item i of ends) as string) & "\n"
-    end repeat
-    return res
-    '''
+        return res
+        '''
+    else:
+        script = f'''
+        tell application "Calendar"
+            tell calendar "{_escape_applescript(calendar)}"
+                set matchingEvents to every event
+                set summaries to summary of matchingEvents
+                set starts to start date of matchingEvents
+                set ends to end date of matchingEvents
+            end tell
+        end tell
+        set res to ""
+        repeat with i from 1 to (count of summaries)
+            set res to res & (item i of summaries) & " | " & ((item i of starts) as string) & " | " & ((item i of ends) as string) & "\n"
+        end repeat
+        return res
+        '''
     output = run_applescript(script, operation=f"Reading events from calendar {calendar!r}")
     events = []
     for line in output.splitlines():
