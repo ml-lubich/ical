@@ -123,6 +123,22 @@ def test_get_events_window_requires_both_bounds():
         get_events("Work", start_before=datetime.datetime(2026, 10, 25, 13, 30))
 
 
+def test_get_events_bounded_query_uses_only_overlapping_events_and_escapes_calendar():
+    start = datetime.datetime(2026, 10, 27, 0, 0)
+    end = datetime.datetime(2026, 10, 28, 0, 0)
+    with patch("ical.calendar.run_applescript", return_value="") as mock_run:
+        get_events('Personal "Local"', start_before=end, end_after=start)
+
+    script = mock_run.call_args.args[0]
+    assert 'tell calendar "Personal \\"Local\\""' in script
+    assert "set matchingEvents to every event whose start date is less than queryEnd" in script
+    assert "and end date is greater than queryStart" in script
+    assert "set day of queryStart to 27" in script
+    assert "set day of queryEnd to 28" in script
+    assert "set summaries to summary of matchingEvents" in script
+    assert "set summaries to summary of every event" not in script
+
+
 def test_get_events_skips_malformed_lines():
     # missing a " | " separator entirely -> fewer than 3 parts, skipped
     output = "Good | Monday, August 10, 2026 at 6:30:00 PM | Monday, August 10, 2026 at 7:30:00 PM\nmalformed line with no pipes\n\n"

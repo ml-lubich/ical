@@ -196,13 +196,31 @@ def show_event(
 @app.command("list")
 def list_events(
     calendar: Annotated[str, typer.Option("--calendar", "-c", help="Calendar name")] = "Calendar",
+    date_filter: Annotated[str | None, typer.Option("--date", help="List events on one local calendar date (YYYY-MM-DD)")] = None,
+    from_date: Annotated[str | None, typer.Option("--from", help="Inclusive first local calendar date (YYYY-MM-DD)")] = None,
+    to_date: Annotated[str | None, typer.Option("--to", help="Inclusive last local calendar date (YYYY-MM-DD)")] = None,
     as_json: Annotated[bool, typer.Option("--json", "-j", help="Emit JSON output")] = False,
 ) -> None:
-    """List events in a calendar."""
+    """List events in a calendar, optionally filtered to a local date range."""
     from ical.calendar import get_events
 
     try:
-        events = get_events(calendar)
+        if date_filter is not None and (from_date is not None or to_date is not None):
+            raise ValueError("--date cannot be combined with --from or --to")
+        if (from_date is None) != (to_date is None):
+            raise ValueError("--from and --to must be provided together")
+
+        if date_filter is not None:
+            window_start, window_end = _date_window(date_filter, date_filter)
+        elif from_date is not None and to_date is not None:
+            window_start, window_end = _date_window(from_date, to_date)
+        else:
+            window_start = window_end = None
+
+        if window_start is None:
+            events = get_events(calendar)
+        else:
+            events = get_events(calendar, start_before=window_end, end_after=window_start)
         json_events = [
             {"title": event["title"], "start": event["start_str"], "end": event["end_str"]}
             for event in events
@@ -221,6 +239,22 @@ def list_events(
     except Exception as err:
         typer.echo(f"Error listing events: {err}", err=True)
         raise typer.Exit(code=1) from err
+
+
+def _date_window(start_value: str, end_value: str) -> tuple[datetime.datetime, datetime.datetime]:
+    """Parse inclusive ISO date endpoints into a local half-open datetime window."""
+    try:
+        start_date = datetime.date.fromisoformat(start_value)
+        end_date = datetime.date.fromisoformat(end_value)
+    except ValueError as err:
+        raise ValueError("Dates must use YYYY-MM-DD format") from err
+    if start_date.isoformat() != start_value or end_date.isoformat() != end_value:
+        raise ValueError("Dates must use YYYY-MM-DD format")
+    if start_date > end_date:
+        raise ValueError("--from date must be on or before --to date")
+    start = datetime.datetime.combine(start_date, datetime.time.min)
+    end = datetime.datetime.combine(end_date + datetime.timedelta(days=1), datetime.time.min)
+    return start, end
 
 
 @app.command("mcp")

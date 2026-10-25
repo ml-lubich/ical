@@ -31,6 +31,8 @@ ical add --title "Team Sync" --start "Monday, August 10, 2026 at 1:00:00 PM" --e
 ical show --id EVENT_ID --calendar you@example.com --json
 ical list -c you@example.com
 ical list -c you@example.com -j
+ical list -c you@example.com --date 2026-10-27
+ical list -c you@example.com --from 2026-10-27 --to 2026-10-31
 ```
 
 Every command and command group accepts both `-h` and `--help`; generated
@@ -47,17 +49,26 @@ Calendar has no recorded response from that attendee yet; it does not mean
 they accepted. CLI errors are printed to stderr and return a nonzero exit
 status.
 
+`ical list` without date options lists the whole calendar. Use `--date`
+(`YYYY-MM-DD`) to list one local calendar day, or use both `--from` and `--to`
+for an inclusive date range. Date-filtered lists query Calendar.app only for
+events overlapping that window, so they stay focused even when unrelated
+events elsewhere in the calendar cannot be read. `--date` cannot be combined
+with `--from` or `--to`; ranges require both endpoints. `-j`/`--json` keeps the
+same `{ "calendar": ..., "events": [{ "title": ..., "start": ..., "end": ... }] }`
+shape for filtered and unfiltered results.
+
 Start and end values accept natural-language dates and ISO 8601. An explicit
 ISO 8601 UTC offset is converted to the Mac's local calendar time before the
 event is created; numeric date components avoid AppleScript misreading ISO
 strings as locale-specific dates.
 
-Every Calendar AppleScript call has a 20-second timeout. Conflict checks ask
-Calendar for only events that overlap the requested time window, which avoids
-loading an entire large calendar before an invitation. `ical list` still reads
-all events. Calendar failures, timeouts, and failed event lookups are reported
-as errors; `ical list` does not turn an automation failure into an empty
-calendar. If creation times out before Calendar returns an ID, JSON reports
+Every Calendar AppleScript call has a 20-second timeout. Conflict checks and
+date-filtered `ical list` calls ask Calendar only for events that overlap the
+requested time window, which avoids loading an entire large calendar. Calendar
+failures, timeouts, and failed event lookups are reported as errors; `ical list`
+does not turn an automation failure into an empty calendar. If creation times
+out before Calendar returns an ID, JSON reports
 `status: "write_outcome_unknown"`
 and an error. Search for the event with `ical list` before retrying. If the
 conflict check times out before creation starts, JSON reports

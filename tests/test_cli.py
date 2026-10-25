@@ -2,6 +2,7 @@ import datetime
 import json
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from ical.cli import app
@@ -220,6 +221,69 @@ def test_list_command_handles_error():
         result = runner.invoke(app, ["list"])
     assert result.exit_code == 1
     assert "Error listing events" in result.stderr
+
+
+def test_list_single_date_passes_local_day_window_and_keeps_json_shape():
+    events = [{
+        "title": "Court appearance",
+        "start": datetime.datetime(2026, 10, 27, 13, 30),
+        "end": datetime.datetime(2026, 10, 27, 14, 30),
+        "start_str": "Tue Oct 27 1:30 PM",
+        "end_str": "Tue Oct 27 2:30 PM",
+    }]
+    with patch("ical.calendar.get_events", return_value=events) as mock_get:
+        result = runner.invoke(app, ["list", "-c", "Personal", "--date", "2026-10-27", "--json"])
+
+    assert result.exit_code == 0
+    mock_get.assert_called_once_with(
+        "Personal",
+        start_before=datetime.datetime(2026, 10, 28),
+        end_after=datetime.datetime(2026, 10, 27),
+    )
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "calendar": "Personal",
+        "events": [{"title": "Court appearance", "start": "Tue Oct 27 1:30 PM", "end": "Tue Oct 27 2:30 PM"}],
+    }
+
+
+def test_list_inclusive_date_range_passes_half_open_window():
+    with patch("ical.calendar.get_events", return_value=[]) as mock_get:
+        result = runner.invoke(app, [
+            "list", "--from", "2026-10-27", "--to", "2026-10-29", "--json",
+        ])
+
+    assert result.exit_code == 0
+    mock_get.assert_called_once_with(
+        "Calendar",
+        start_before=datetime.datetime(2026, 10, 30),
+        end_after=datetime.datetime(2026, 10, 27),
+    )
+    assert json.loads(result.stdout) == {"calendar": "Calendar", "events": []}
+
+
+@pytest.mark.parametrize("args", [
+    ["--date", "2026-02-30"],
+    ["--date", "Oct 27, 2026"],
+    ["--from", "2026-10-27"],
+    ["--to", "2026-10-29"],
+    ["--from", "2026-10-29", "--to", "2026-10-27"],
+    ["--date", "2026-10-27", "--from", "2026-10-27", "--to", "2026-10-29"],
+])
+def test_list_rejects_invalid_or_ambiguous_date_filters_without_calendar_call(args):
+    with patch("ical.calendar.get_events") as mock_get:
+        result = runner.invoke(app, ["list", *args])
+
+    assert result.exit_code != 0
+    assert "Error listing events" in result.stderr
+    mock_get.assert_not_called()
+
+
+def test_list_help_documents_single_day_and_range_filters():
+    result = runner.invoke(app, ["list", "-h"])
+    assert result.exit_code == 0
+    for option in ("--date", "--from", "--to", "--calendar", "--json"):
+        assert option in result.stdout
 
 
 def test_mcp_command_runs_server():
