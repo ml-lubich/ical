@@ -54,6 +54,9 @@ Calendar has no recorded response from that attendee yet; it does not mean
 they accepted. CLI errors are printed to stderr and return a nonzero exit
 status.
 
+`ical agent schema` includes the installed package version alongside the CLI
+and MCP command contracts.
+
 `ical list` without date options lists the whole calendar. Use `--date`
 (`YYYY-MM-DD`) to list one local calendar day, or use both `--from` and `--to`
 for an inclusive date range. Date-filtered lists query Calendar.app only for

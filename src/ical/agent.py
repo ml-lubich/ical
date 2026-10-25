@@ -1,8 +1,11 @@
 import json
+from ical import __version__
+
 
 def build_schema() -> dict:
     return {
         "name": "ical",
+        "version": __version__,
         "description": "macOS Calendar.app CLI and MCP tool with bounded operations and verified invite creation",
         "apple_script_timeout_seconds": 20,
         "commands": {

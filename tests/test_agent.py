@@ -1,9 +1,11 @@
 from ical.agent import build_schema, build_guide
+from ical import __version__
 
 
 def test_build_schema_structure():
     schema = build_schema()
     assert schema["name"] == "ical"
+    assert schema["version"] == __version__
     assert set(schema["commands"].keys()) == {"calendars", "list", "search", "show", "edit", "delete", "update", "add", "mcp"}
     assert "--title" in schema["commands"]["add"]["flags"]
     assert "--calendar" in schema["commands"]["list"]["flags"]
