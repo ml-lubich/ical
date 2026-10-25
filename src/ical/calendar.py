@@ -406,6 +406,11 @@ def edit_event(
         set matchingEvents to every event whose id is "{_escape_applescript(event_id)}"
         if (count of matchingEvents) is not 1 then error "ICAL_EVENT_NOT_FOUND_OR_AMBIGUOUS"
         set targetEvent to item 1 of matchingEvents
+        set finalStart to start date of targetEvent
+        set finalEnd to end date of targetEvent
+        {"set finalStart to updatedStart" if start is not None else ""}
+        {"set finalEnd to updatedEnd" if end is not None else ""}
+        if finalStart is greater than or equal to finalEnd then error "ICAL_INVALID_EVENT_TIME_RANGE"
         {assignments_script}
         {check_script}
         return id of targetEvent as text
@@ -430,8 +435,11 @@ def delete_event(calendar: str, event_id: str) -> Dict[str, str]:
         set matchingEvents to every event whose id is "{_escape_applescript(event_id)}"
         if (count of matchingEvents) is not 1 then error "ICAL_EVENT_NOT_FOUND_OR_AMBIGUOUS"
         set targetEvent to item 1 of matchingEvents
+        set deletedEventID to id of targetEvent as text
         delete targetEvent
-        return "{_escape_applescript(event_id)}"
+        set remainingEvents to every event whose id is deletedEventID
+        if (count of remainingEvents) is not 0 then error "ICAL_DELETE_VERIFY_FAILED"
+        return deletedEventID
     end tell
 end tell'''
     result = run_applescript(

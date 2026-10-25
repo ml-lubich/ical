@@ -81,7 +81,10 @@ the Calendar ID and location, so you can pass an ID directly to `show`.
 `--start`, `--end`, `--location`, and `--description`; omitted fields remain
 unchanged. It verifies the result by reading the event back. If verification
 fails after the write, inspect the event with `show` before retrying.
-`ical delete --id EVENT_ID` requires `--yes` and deletes only that exact ID.
+`ical delete --id EVENT_ID` requires `--yes`, deletes only that exact ID, and
+reads Calendar back to verify the event is gone. A JSON result reports
+`delete_outcome_unknown` if the delete cannot be verified; inspect Calendar
+before retrying.
 
 `ical update` upgrades an installed uv tool with `uv tool upgrade ical-mcp`.
 For pip or Homebrew installs, upgrade through that package manager instead.

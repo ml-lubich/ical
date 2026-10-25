@@ -285,7 +285,11 @@ def delete_calendar_event(
             )
         raise typer.Exit(code=1) from err
     except Exception as err:
-        typer.echo(f"Could not delete event {event_id!r}: {err}", err=True)
+        message = f"Delete outcome is unverified for {event_id!r}; inspect Calendar before retrying. Details: {err}"
+        if as_json:
+            typer.echo(json.dumps({"status": "delete_outcome_unknown", "id": event_id, "error": str(err)}))
+        else:
+            typer.echo(message, err=True)
         raise typer.Exit(code=1) from err
     if as_json:
         typer.echo(json.dumps({"status": "deleted", **result}))
@@ -307,13 +311,11 @@ def update_tool() -> None:
         typer.echo(f"Could not run uv tool upgrade: {err}", err=True)
         raise typer.Exit(code=1) from err
 
-    if result.stdout.strip():
-        typer.echo(result.stdout.strip())
     if result.returncode:
         typer.echo(result.stderr.strip() or "uv could not upgrade ical-mcp", err=True)
         raise typer.Exit(code=1)
-    if not result.stdout.strip():
-        typer.echo("ical-mcp is up to date.")
+    output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
+    typer.echo(output or "ical-mcp upgrade completed.")
 
 
 @app.command("list")

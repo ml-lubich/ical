@@ -65,14 +65,16 @@ def build_schema() -> dict:
                 "match_policy": "Exact Calendar event ID in the selected calendar"
             },
             "delete": {
-                "description": "Delete one event by Calendar ID",
+                "description": "Delete one event by Calendar ID and verify it no longer exists",
                 "flags": {
                     "--id": "Calendar event ID (required)",
                     "--calendar": "Calendar name (default: Calendar)",
                     "--yes": "Required explicit confirmation",
-                    "--json": "Return a machine-readable result"
+                    "--json": "Return deleted or delete_outcome_unknown status"
                 },
-                "confirmation_required": True
+                "confirmation_required": True,
+                "success": {"status": "deleted", "fields": ["id", "calendar"]},
+                "failure": {"status": "delete_outcome_unknown", "instruction": "Inspect Calendar before retrying"}
             },
             "update": {
                 "description": "Upgrade the installed ical CLI using uv",
@@ -195,8 +197,10 @@ return IDs; use one with `ical show` to inspect an event created by any app. `sh
 returns title, ISO 8601 start/end, calendar, location, description, URL, and
 attendees. Missing optional text fields are empty strings. The MCP server offers
 the same read path through `list_events`, `search_events`, and `show_event`.
-`ical edit` changes only supplied fields and verifies the result by reading the
-event back. `ical delete` requires `--yes` and always targets a Calendar ID.
+`ical edit` checks the final time range before writing, changes only supplied
+fields, then verifies the event by reading it back. `ical delete` requires
+`--yes`, targets a Calendar ID, and reads Calendar back to confirm the event is
+gone. If deletion cannot be verified, inspect Calendar before retrying.
 `ical update` upgrades the installed CLI with `uv tool upgrade ical-mcp`; it
 does not edit calendar data. MCP exposes matching `edit_calendar_event` and
 `delete_calendar_event` tools; deletion requires `confirm=true`.

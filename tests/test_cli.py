@@ -447,18 +447,45 @@ def test_delete_event_requires_explicit_yes_and_delegates():
     mock_delete.assert_called_once_with("Work", "evt-1")
 
 
+def test_delete_event_failure_warns_before_retry():
+    with patch("ical.calendar.delete_event", side_effect=RuntimeError("verification failed")):
+        result = runner.invoke(app, ["delete", "--id", "evt-1", "--calendar", "Work", "--yes"])
+    assert result.exit_code == 1
+    assert "inspect Calendar before retrying" in result.stderr
+
+
+def test_delete_event_json_failure_reports_unknown_outcome():
+    import json
+
+    with patch("ical.calendar.delete_event", side_effect=RuntimeError("verification failed")):
+        result = runner.invoke(app, ["delete", "--id", "evt-1", "--calendar", "Work", "--yes", "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["status"] == "delete_outcome_unknown"
+
+
 def test_update_command_runs_uv_tool_upgrade_and_surfaces_output():
     import subprocess
 
     with patch("ical.cli.subprocess.run", return_value=subprocess.CompletedProcess(
-        args=["uv", "tool", "upgrade", "ical-mcp"], returncode=0, stdout="Upgraded ical-mcp", stderr="",
+        args=["uv", "tool", "upgrade", "ical-mcp"], returncode=0, stdout="", stderr="Installed ical-mcp",
     )) as mock_run:
         result = runner.invoke(app, ["update"])
     assert result.exit_code == 0
-    assert "Upgraded ical-mcp" in result.stdout
+    assert "Installed ical-mcp" in result.stdout
     mock_run.assert_called_once_with(
         ["uv", "tool", "upgrade", "ical-mcp"], capture_output=True, check=False, text=True,
     )
+
+
+def test_update_command_reports_completion_when_uv_is_quiet():
+    import subprocess
+
+    with patch("ical.cli.subprocess.run", return_value=subprocess.CompletedProcess(
+        args=["uv", "tool", "upgrade", "ical-mcp"], returncode=0, stdout="", stderr="",
+    )):
+        result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    assert "upgrade completed" in result.stdout.lower()
 
 
 def test_update_command_returns_nonzero_on_upgrade_failure():

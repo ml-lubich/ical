@@ -442,6 +442,18 @@ def test_edit_event_sets_only_supplied_fields_by_exact_calendar_id():
     assert "count of matchingEvents" in script
 
 
+def test_edit_event_validates_final_time_range_before_assigning_fields():
+    from ical.calendar import edit_event
+
+    with patch("ical.calendar.run_applescript", return_value="event-1") as mock_run:
+        edit_event("Work", "event-1", start="Monday, August 10, 2026 at 10:00:00 AM")
+    script = mock_run.call_args.args[0]
+    validate_at = script.index('if finalStart is greater than or equal to finalEnd then error "ICAL_INVALID_EVENT_TIME_RANGE"')
+    assign_at = script.index("set start date of targetEvent to updatedStart")
+    assert validate_at < assign_at
+    assert "set finalEnd to end date of targetEvent" in script
+
+
 def test_delete_event_deletes_only_exact_id_in_selected_calendar():
     from ical.calendar import delete_event
 
@@ -452,3 +464,6 @@ def test_delete_event_deletes_only_exact_id_in_selected_calendar():
     assert 'id is "event-1"' in script
     assert "count of matchingEvents" in script
     assert "delete targetEvent" in script
+    assert "every event whose id is deletedEventID" in script
+    assert 'if (count of remainingEvents) is not 0 then error "ICAL_DELETE_VERIFY_FAILED"' in script
+    assert script.index("delete targetEvent") < script.index("every event whose id is deletedEventID")
