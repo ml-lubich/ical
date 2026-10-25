@@ -40,9 +40,9 @@ ical delete --id EVENT_ID -c you@example.com --yes
 ical update
 ```
 
-Every command and command group accepts both `-h` and `--help`; generated
-shell-completion flags are disabled so help lists the supported command
-surface. `ical list` prints a human-readable table; `-j`/`--json` prints JSON
+Every command and command group accepts both `-h` and `--help`; the root also
+accepts `-V`/`--version`. Generated shell-completion flags are disabled so
+help lists the supported command surface. `ical list` prints a human-readable table; `-j`/`--json` prints JSON
 to stdout. `ical add` verifies the created event by reading it back from
 Calendar before reporting success. Human output summarizes the verified event
 and attendee RSVP status. With `--json`, it returns a stable object with

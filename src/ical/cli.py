@@ -28,6 +28,7 @@ app = typer.Typer(
     name="ical",
     help="macOS Calendar.app CLI and MCP server.",
     epilog=EPILOG,
+    invoke_without_command=True,
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode="rich",
@@ -44,6 +45,19 @@ agent_app = typer.Typer(
 app.add_typer(agent_app, name="agent")
 
 console = Console()
+
+
+@app.callback()
+def root_options(
+    version: Annotated[
+        bool,
+        typer.Option("--version", "-V", is_eager=True, help="Show the installed version"),
+    ] = False,
+) -> None:
+    """Show root-level CLI options."""
+    if version:
+        typer.echo(__version__)
+        raise typer.Exit()
 
 
 def _event_json(event: dict) -> dict:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ical-mcp"
-version = "0.2.3"
+version = "0.2.4"
 description = "macOS Calendar.app CLI and MCP server — list calendars, schedule events, invite attendees"
 readme = "README.md"
 license = "MIT"

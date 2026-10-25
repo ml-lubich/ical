@@ -398,6 +398,13 @@ def test_version_command_matches_package_version():
     assert __version__ in result.stdout
 
 
+def test_root_version_flags_match_package_version():
+    for flag in ("-V", "--version"):
+        result = runner.invoke(app, [flag])
+        assert result.exit_code == 0
+        assert __version__ in result.stdout
+
+
 def test_no_args_shows_help():
     # no_args_is_help=True still exits 2 (Click's standalone_mode UsageError convention)
     # while printing the help text.
