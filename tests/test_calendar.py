@@ -9,6 +9,7 @@ from ical.calendar import (
     _escape_applescript,
     parse_date,
     get_events,
+    search_events,
     check_conflicts,
     add_event,
     CalendarTimeoutError,
@@ -142,6 +143,40 @@ def test_get_events_bounded_query_uses_only_overlapping_events_and_escapes_calen
     assert "set summaries to summary of every event" not in script
 
 
+def test_get_events_search_query_uses_native_title_and_location_predicate():
+    with patch("ical.calendar.run_applescript", return_value="") as mock_run:
+        get_events('Work "Local"', query='court "case"')
+    script = mock_run.call_args.args[0]
+    assert 'summary contains "court \\"case\\""' in script
+    assert 'location contains "court \\"case\\""' in script
+    assert 'tell calendar "Work \\"Local\\""' in script
+
+
+def test_get_events_include_identity_location_and_safe_record_delimiters():
+    output = (
+        "evt-1\x1fCourt | arraignment\ncontinued\x1f"
+        "Tuesday, October 27, 2026 at 1:30:00 PM\x1f"
+        "Tuesday, October 27, 2026 at 2:30:00 PM\x1f"
+        "201 N. First Street | Room 2\x1e"
+    )
+    with patch("ical.calendar.run_applescript", return_value=output) as mock_run:
+        events = get_events(
+            "Personal",
+            start_before=datetime.datetime(2026, 10, 28),
+            end_after=datetime.datetime(2026, 10, 27),
+        )
+
+    assert len(events) == 1
+    assert events[0]["id"] == "evt-1"
+    assert events[0]["title"] == "Court | arraignment\ncontinued"
+    assert events[0]["location"] == "201 N. First Street | Room 2"
+    script = mock_run.call_args.args[0]
+    assert "id of matchingEvent" in script
+    assert "location of matchingEvent" in script
+    assert "ASCII character 31" in script
+    assert "ASCII character 30" in script
+
+
 def test_get_events_skips_malformed_lines():
     # missing a " | " separator entirely -> fewer than 3 parts, skipped
     output = "Good | Monday, August 10, 2026 at 6:30:00 PM | Monday, August 10, 2026 at 7:30:00 PM\nmalformed line with no pipes\n\n"
@@ -164,14 +199,45 @@ def test_get_events_propagates_applescript_error():
             get_events("Work")
 
 
+def test_search_events_matches_title_or_location_case_insensitively_and_limits_results():
+    events = [
+        {"id": "1", "title": "Court appearance", "location": "San Jose", "start": 1},
+        {"id": "2", "title": "Other", "location": "County COURTHOUSE", "start": 2},
+        {"id": "3", "title": "Court follow-up", "location": "Remote", "start": 3},
+        {"id": "4", "title": "Unrelated", "location": "Office", "start": 4},
+    ]
+    with patch("ical.calendar.get_events", return_value=events) as mock_get:
+        results = search_events("court", "Work", limit=2)
+    assert [event["id"] for event in results] == ["1", "2"]
+    mock_get.assert_called_once_with("Work", query="court")
+
+
+@pytest.mark.parametrize("query,limit", [(" ", 10), ("court", 0), ("court", -1)])
+def test_search_events_rejects_blank_query_or_nonpositive_limit(query, limit):
+    with pytest.raises(ValueError):
+        search_events(query, limit=limit)
+
+
 def test_get_event_details_returns_id_and_attendee_status():
-    output = "evt-1\nStandup\nMonday, August 10, 2026 at 9:00:00 AM\nMonday, August 10, 2026 at 9:15:00 AM\nalice@example.com\x1faccepted"
+    output = (
+        "evt-1\x1fStandup\x1fMonday, August 10, 2026 at 9:00:00 AM"
+        "\x1fMonday, August 10, 2026 at 9:15:00 AM\x1fRoom A"
+        "\x1fDaily agenda\x1fhttps://example.test/event"
+        "\x1ealice@example.com\x1faccepted"
+    )
     with patch("ical.calendar.run_applescript", return_value=output) as mock_run:
         event = get_event_details("Work", "evt-1")
     assert event["id"] == "evt-1"
     assert event["title"] == "Standup"
+    assert event["location"] == "Room A"
+    assert event["description"] == "Daily agenda"
+    assert event["url"] == "https://example.test/event"
     assert event["attendees"] == [{"email": "alice@example.com", "status": "accepted"}]
     assert 'tell calendar "Work"' in mock_run.call_args.args[0]
+    script = mock_run.call_args.args[0]
+    assert "location of targetEvent" in script
+    assert "description of targetEvent" in script
+    assert "url of targetEvent" in script
 
 
 def test_get_event_details_missing_event_is_distinct():

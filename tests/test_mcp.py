@@ -1,3 +1,4 @@
+import datetime
 import tomllib
 from pathlib import Path
 from unittest.mock import patch
@@ -13,12 +14,74 @@ def test_list_calendars_tool():
 
 def test_list_events_tool_shapes_output():
     events = [
-        {"title": "Standup", "start": None, "end": None, "start_str": "Mon 9am", "end_str": "Mon 9:15am"},
+        {"id": "event-1", "title": "Standup", "start": None, "end": None, "start_str": "Mon 9am", "end_str": "Mon 9:15am", "location": "Room 4"},
     ]
     with patch("ical.mcp.core_get_events", return_value=events) as mock_get:
         result = list_events(calendar="Work")
     mock_get.assert_called_once_with("Work")
-    assert result == [{"title": "Standup", "start": "Mon 9am", "end": "Mon 9:15am"}]
+    assert result == [{"id": "event-1", "title": "Standup", "start": "Mon 9am", "end": "Mon 9:15am", "location": "Room 4"}]
+
+
+def test_list_events_tool_passes_single_date_as_bounded_local_window():
+    with patch("ical.mcp.core_get_events", return_value=[]) as mock_get:
+        result = list_events(calendar="Work", date="2026-10-27")
+    assert result == []
+    mock_get.assert_called_once_with(
+        "Work",
+        start_before=datetime.datetime(2026, 10, 28),
+        end_after=datetime.datetime(2026, 10, 27),
+    )
+
+
+def test_list_events_tool_passes_inclusive_range_as_half_open_window():
+    with patch("ical.mcp.core_get_events", return_value=[]) as mock_get:
+        result = list_events(calendar="Work", from_date="2026-10-27", to_date="2026-10-29")
+    assert result == []
+    mock_get.assert_called_once_with(
+        "Work",
+        start_before=datetime.datetime(2026, 10, 30),
+        end_after=datetime.datetime(2026, 10, 27),
+    )
+
+
+def test_list_events_tool_rejects_partial_and_conflicting_date_filters():
+    import pytest
+
+    with pytest.raises(ValueError, match="together"):
+        list_events(calendar="Work", from_date="2026-10-27")
+    with pytest.raises(ValueError, match="cannot be combined"):
+        list_events(calendar="Work", date="2026-10-27", from_date="2026-10-27", to_date="2026-10-28")
+
+
+def test_show_event_tool_reads_details_for_external_calendar_id():
+    from ical import mcp as mcp_module
+
+    show_event = getattr(mcp_module, "show_event")
+    event = {
+        "id": "external-event-id", "title": "Court appearance", "start_str": "Tue 1:30 PM",
+        "end_str": "Tue 2:30 PM", "location": "Courthouse", "description": "Bring citation",
+        "url": "https://example.test/court", "attendees": [],
+    }
+    with patch("ical.mcp.core_get_event_details", return_value=event) as mock_get:
+        result = show_event(calendar="Personal", event_id="external-event-id")
+    assert result == event
+    mock_get.assert_called_once_with("Personal", "external-event-id")
+
+
+def test_search_events_tool_delegates_query_date_and_limit():
+    from ical import mcp as mcp_module
+
+    search_tool = getattr(mcp_module, "search_events")
+    with patch("ical.mcp.core_search_events", return_value=[], create=True) as mock_search:
+        result = search_tool(
+            query="court", calendar="Work", date="2026-10-27", limit=3,
+        )
+    assert result == []
+    mock_search.assert_called_once_with(
+        "court", "Work", limit=3,
+        start_before=datetime.datetime(2026, 10, 28),
+        end_after=datetime.datetime(2026, 10, 27),
+    )
 
 
 def test_add_calendar_event_tool_success():

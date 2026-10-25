@@ -1,12 +1,20 @@
 import sys
 import json
 import asyncio
+import datetime
 from typing import List, Optional
 try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:
     from mcp.server.mcpserver import MCPServer as FastMCP
-from ical.calendar import add_event as core_add_event, get_events as core_get_events, run_applescript
+from ical.calendar import (
+    add_event as core_add_event,
+    date_window,
+    get_event_details as core_get_event_details,
+    get_events as core_get_events,
+    search_events as core_search_events,
+    run_applescript,
+)
 
 mcp = FastMCP("ical")
 
@@ -17,16 +25,78 @@ def list_calendars() -> List[str]:
     return run_applescript(script).split(", ")
 
 @mcp.tool()
-def list_events(calendar: str = "Calendar") -> List[dict]:
-    """List events in a calendar."""
-    events = core_get_events(calendar)
+def list_events(
+    calendar: str = "Calendar",
+    date: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+) -> List[dict]:
+    """List calendar events with IDs and locations, optionally restricted to a date window."""
+    if date is not None and (from_date is not None or to_date is not None):
+        raise ValueError("date cannot be combined with from_date or to_date")
+    if (from_date is None) != (to_date is None):
+        raise ValueError("from_date and to_date must be provided together")
+    if date is not None:
+        window_start, window_end = date_window(date, date)
+        events = core_get_events(calendar, start_before=window_end, end_after=window_start)
+    elif from_date is not None and to_date is not None:
+        window_start, window_end = date_window(from_date, to_date)
+        events = core_get_events(calendar, start_before=window_end, end_after=window_start)
+    else:
+        events = core_get_events(calendar)
     return [
         {
+            "id": e.get("id", ""),
             "title": e["title"],
             "start": e["start_str"],
-            "end": e["end_str"]
+            "end": e["end_str"],
+            "location": e.get("location", ""),
         } for e in events
     ]
+
+
+@mcp.tool()
+def search_events(
+    query: str,
+    calendar: str = "Calendar",
+    date: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    limit: int = 20,
+) -> List[dict]:
+    """Search event titles and locations, optionally within a local date window."""
+    if date is not None and (from_date is not None or to_date is not None):
+        raise ValueError("date cannot be combined with from_date or to_date")
+    if (from_date is None) != (to_date is None):
+        raise ValueError("from_date and to_date must be provided together")
+    kwargs = {}
+    if date is not None:
+        window_start, window_end = date_window(date, date)
+        kwargs = {"start_before": window_end, "end_after": window_start}
+    elif from_date is not None and to_date is not None:
+        window_start, window_end = date_window(from_date, to_date)
+        kwargs = {"start_before": window_end, "end_after": window_start}
+    events = core_search_events(query, calendar, limit=limit, **kwargs)
+    return [
+        {
+            "id": event.get("id", ""),
+            "title": event["title"],
+            "start": event["start_str"],
+            "end": event["end_str"],
+            "location": event.get("location", ""),
+        }
+        for event in events
+    ]
+
+
+@mcp.tool()
+def show_event(calendar: str, event_id: str) -> dict:
+    """Read any calendar event by ID, including location, notes, URL, and attendees."""
+    event = core_get_event_details(calendar, event_id)
+    return {
+        key: value.isoformat() if isinstance(value, datetime.datetime) else value
+        for key, value in event.items()
+    }
 
 @mcp.tool()
 def add_calendar_event(

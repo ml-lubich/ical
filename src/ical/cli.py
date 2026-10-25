@@ -50,7 +50,10 @@ def _event_json(event: dict) -> dict:
     return {
         key: value.isoformat() if isinstance(value, datetime.datetime) else value
         for key, value in event.items()
-        if key in {"id", "title", "start", "end", "calendar", "attendees"}
+        if key in {
+            "id", "title", "start", "end", "calendar", "location",
+            "description", "url", "attendees",
+        }
     }
 
 
@@ -61,6 +64,10 @@ def _print_event(event: dict, label: str) -> None:
         f"[bold green]{label}.[/bold green] "
         f"{event['title']} — {start_text} to {end_text} ([cyan]{event['calendar']}[/cyan])"
     )
+    for label, key in (("Location", "location"), ("Description", "description"), ("URL", "url")):
+        value = event.get(key) or ""
+        if value:
+            console.print(f"  {label}: {value}")
     attendees = event.get("attendees", [])
     if attendees:
         for guest in attendees:
@@ -69,6 +76,17 @@ def _print_event(event: dict, label: str) -> None:
     else:
         console.print("  Invitees: none")
     console.print(f"  ID: {event['id']}")
+
+
+def _print_event_summary(event: dict) -> None:
+    """Print the useful discovery fields without truncating long IDs or locations."""
+    console.print(
+        f"[bold]{event['title']}[/bold] — {event['start_str']} to {event['end_str']}"
+    )
+    if event.get("id"):
+        console.print(f"  ID: {event['id']}")
+    if event.get("location"):
+        console.print(f"  Location: {event['location']}")
 
 
 @app.command("calendars")
@@ -171,7 +189,7 @@ def add_event(
 
 @app.command("show")
 def show_event(
-    event_id: Annotated[str, typer.Option("--id", help="Event ID returned by `ical add`")],
+    event_id: Annotated[str, typer.Option("--id", help="Calendar event ID from `ical list` or another source")],
     calendar: Annotated[str, typer.Option("--calendar", "-c", help="Calendar name")] = "Calendar",
     as_json: Annotated[bool, typer.Option("--json", "-j", help="Emit verified event as JSON")] = False,
 ) -> None:
@@ -202,7 +220,7 @@ def list_events(
     as_json: Annotated[bool, typer.Option("--json", "-j", help="Emit JSON output")] = False,
 ) -> None:
     """List events in a calendar, optionally filtered to a local date range."""
-    from ical.calendar import get_events
+    from ical.calendar import date_window, get_events
 
     try:
         if date_filter is not None and (from_date is not None or to_date is not None):
@@ -211,9 +229,9 @@ def list_events(
             raise ValueError("--from and --to must be provided together")
 
         if date_filter is not None:
-            window_start, window_end = _date_window(date_filter, date_filter)
+            window_start, window_end = date_window(date_filter, date_filter)
         elif from_date is not None and to_date is not None:
-            window_start, window_end = _date_window(from_date, to_date)
+            window_start, window_end = date_window(from_date, to_date)
         else:
             window_start = window_end = None
 
@@ -222,39 +240,77 @@ def list_events(
         else:
             events = get_events(calendar, start_before=window_end, end_after=window_start)
         json_events = [
-            {"title": event["title"], "start": event["start_str"], "end": event["end_str"]}
+            {
+                "id": event.get("id", ""),
+                "title": event["title"],
+                "start": event["start_str"],
+                "end": event["end_str"],
+                "location": event.get("location", ""),
+            }
             for event in events
         ]
         if as_json:
             typer.echo(json.dumps({"calendar": calendar, "events": json_events}, ensure_ascii=False))
             return
 
-        table = Table(title=f"Events in {calendar}")
-        table.add_column("Title", style="bold white")
-        table.add_column("Start", style="green")
-        table.add_column("End", style="yellow")
+        console.print(f"[bold]Events in {calendar}[/bold]")
         for event in events:
-            table.add_row(event["title"], event["start_str"], event["end_str"])
-        console.print(table)
+            _print_event_summary(event)
     except Exception as err:
         typer.echo(f"Error listing events: {err}", err=True)
         raise typer.Exit(code=1) from err
 
 
-def _date_window(start_value: str, end_value: str) -> tuple[datetime.datetime, datetime.datetime]:
-    """Parse inclusive ISO date endpoints into a local half-open datetime window."""
+@app.command("search")
+def search_events(
+    query: Annotated[str, typer.Argument(help="Substring to find in event titles or locations")],
+    calendar: Annotated[str, typer.Option("--calendar", "-c", help="Calendar name")] = "Calendar",
+    date_filter: Annotated[str | None, typer.Option("--date", help="Search one local date (YYYY-MM-DD)")] = None,
+    from_date: Annotated[str | None, typer.Option("--from", help="Inclusive first local date (YYYY-MM-DD)")] = None,
+    to_date: Annotated[str | None, typer.Option("--to", help="Inclusive last local date (YYYY-MM-DD)")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-l", min=1, help="Maximum matches to return")] = 20,
+    as_json: Annotated[bool, typer.Option("--json", "-j", help="Emit JSON output")] = False,
+) -> None:
+    """Search event titles and locations, optionally within a local date window."""
+    from ical.calendar import date_window, search_events as core_search_events
+
     try:
-        start_date = datetime.date.fromisoformat(start_value)
-        end_date = datetime.date.fromisoformat(end_value)
-    except ValueError as err:
-        raise ValueError("Dates must use YYYY-MM-DD format") from err
-    if start_date.isoformat() != start_value or end_date.isoformat() != end_value:
-        raise ValueError("Dates must use YYYY-MM-DD format")
-    if start_date > end_date:
-        raise ValueError("--from date must be on or before --to date")
-    start = datetime.datetime.combine(start_date, datetime.time.min)
-    end = datetime.datetime.combine(end_date + datetime.timedelta(days=1), datetime.time.min)
-    return start, end
+        if not query.strip():
+            raise ValueError("Search query cannot be empty")
+        if date_filter is not None and (from_date is not None or to_date is not None):
+            raise ValueError("--date cannot be combined with --from or --to")
+        if (from_date is None) != (to_date is None):
+            raise ValueError("--from and --to must be provided together")
+        if date_filter is not None:
+            window_start, window_end = date_window(date_filter, date_filter)
+        elif from_date is not None and to_date is not None:
+            window_start, window_end = date_window(from_date, to_date)
+        else:
+            window_start = window_end = None
+
+        kwargs = {}
+        if window_start is not None:
+            kwargs = {"start_before": window_end, "end_after": window_start}
+        events = core_search_events(query, calendar, limit=limit, **kwargs)
+        json_events = [
+            {
+                "id": event.get("id", ""),
+                "title": event["title"],
+                "start": event["start_str"],
+                "end": event["end_str"],
+                "location": event.get("location", ""),
+            }
+            for event in events
+        ]
+        if as_json:
+            typer.echo(json.dumps({"calendar": calendar, "events": json_events}, ensure_ascii=False))
+            return
+        console.print(f"[bold]Search results in {calendar}[/bold]")
+        for event in events:
+            _print_event_summary(event)
+    except Exception as err:
+        typer.echo(f"Error searching events: {err}", err=True)
+        raise typer.Exit(code=1) from err
 
 
 @app.command("mcp")

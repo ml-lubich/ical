@@ -11,19 +11,42 @@ def build_schema() -> dict:
                 "args": []
             },
             "list": {
-                "description": "List events in a calendar; Calendar automation errors are reported, never returned as an empty calendar",
+                "description": "List events with Calendar ID and location; optionally restrict to a local date or inclusive date range",
                 "flags": {
                     "--calendar": "Calendar name (default: Calendar)",
+                    "--date": "List one local date (YYYY-MM-DD); cannot combine with --from/--to",
+                    "--from": "Inclusive first local date (YYYY-MM-DD); requires --to",
+                    "--to": "Inclusive last local date (YYYY-MM-DD); requires --from",
                     "--json": "Output JSON"
-                }
+                },
+                "event_fields": ["id", "title", "start", "end", "location"],
+                "date_filter_semantics": "Calendar-native overlap query; --date and --from/--to use local calendar dates, range endpoints are inclusive",
+                "errors": "Invalid or incomplete date filters and Calendar automation failures return errors; a Calendar failure is never returned as an empty list"
+            },
+            "search": {
+                "description": "Find events whose title or location contains the query",
+                "args": {"query": "Non-empty, case-insensitive substring (required)"},
+                "flags": {
+                    "--calendar": "Calendar name (default: Calendar)",
+                    "--date": "Search one local date (YYYY-MM-DD); cannot combine with --from/--to",
+                    "--from": "Inclusive first local date (YYYY-MM-DD); requires --to",
+                    "--to": "Inclusive last local date (YYYY-MM-DD); requires --from",
+                    "--limit": "Maximum results (positive integer; default: 20)",
+                    "--json": "Output JSON"
+                },
+                "event_fields": ["id", "title", "start", "end", "location"],
+                "errors": "Blank queries, invalid date filters, and Calendar automation failures return errors"
             },
             "show": {
-                "description": "Read one event by Calendar ID, including invitee RSVP status; use to verify an uncertain write",
+                "description": "Read any event by Calendar ID, including events created outside ical",
                 "flags": {
-                    "--id": "Calendar event ID (required)",
+                    "--id": "Calendar event ID (required; can come from ical list)",
                     "--calendar": "Calendar name containing the event (default: Calendar)",
                     "--json": "Return a machine-readable verified result"
-                }
+                },
+                "event_fields": ["id", "title", "start", "end", "calendar", "location", "description", "url", "attendees"],
+                "optional_text_fields": "location, description, and url are empty strings when Calendar has no value",
+                "attendees": {"fields": ["email", "status"], "status_values": ["accepted", "declined", "tentative", "unknown"]}
             },
             "add": {
                 "description": "Create an event, check for conflicts, invite attendees, then read the event back by ID before reporting success",
@@ -46,9 +69,10 @@ def build_schema() -> dict:
         "add_result": {
             "status": ["verified", "created_unverified", "write_outcome_unknown", "not_created"],
             "event": {
-                "fields": ["id", "title", "start", "end", "calendar", "attendees"],
+                "fields": ["id", "title", "start", "end", "calendar", "location", "description", "url", "attendees"],
                 "start": "ISO 8601 string",
                 "end": "ISO 8601 string",
+                "optional_text_fields": ["location", "description", "url"],
                 "attendees": {"fields": ["email", "status"], "status_values": ["accepted", "declined", "tentative", "unknown"]}
             },
             "unverified_fields": ["status", "id", "error"],
@@ -59,6 +83,34 @@ def build_schema() -> dict:
                 "failure": {"status": "verification_failed", "id": "requested event ID", "error": "reason"}
             },
             "note": "Calendar attendee status describes RSVP state. An unknown status means no response is recorded; it does not mean accepted. created_unverified means the write may have succeeded but read-back failed; preserve its ID and check with `ical show`. write_outcome_unknown means event creation timed out before its ID was returned; search the calendar with `ical list` before retrying."
+        },
+        "mcp_tools": {
+            "list_events": {
+                "description": "List events with Calendar ID and location",
+                "args": {
+                    "calendar": "Calendar name (default: Calendar)",
+                    "date": "Optional local date (YYYY-MM-DD)",
+                    "from_date": "Optional inclusive first local date; requires to_date",
+                    "to_date": "Optional inclusive last local date; requires from_date"
+                }
+            },
+            "show_event": {
+                "description": "Read any event by Calendar ID",
+                "args": {"calendar": "Calendar name", "event_id": "Calendar event ID"},
+                "event_fields": ["id", "title", "start", "end", "calendar", "location", "description", "url", "attendees"]
+            },
+            "search_events": {
+                "description": "Search event titles and locations; optionally restrict to a date or inclusive date range",
+                "args": {
+                    "query": "Non-empty, case-insensitive substring",
+                    "calendar": "Calendar name (default: Calendar)",
+                    "date": "Optional local date (YYYY-MM-DD)",
+                    "from_date": "Optional inclusive first local date; requires to_date",
+                    "to_date": "Optional inclusive last local date; requires from_date",
+                    "limit": "Maximum results (positive integer; default: 20)"
+                },
+                "event_fields": ["id", "title", "start", "end", "location"]
+            }
         },
         "errors": {
             "timeout": "Calendar automation exceeded its bounded timeout. The outcome of a write may be uncertain.",
@@ -80,7 +132,11 @@ def build_guide() -> str:
 ## Common Operations:
 - List calendars: `ical calendars`
 - List events in calendar: `ical list -c you@example.com --json`
-- Read one event by its Calendar ID: `ical show --id EVENT_ID --calendar you@example.com --json`
+- List events on a date: `ical list -c you@example.com --date 2026-10-27`
+- List an inclusive date range: `ical list -c you@example.com --from 2026-10-27 --to 2026-10-31`
+- Search event titles and locations: `ical search court -c you@example.com --limit 20`
+- Search on a date: `ical search courthouse -c you@example.com --date 2026-10-27`
+- Read any listed event by its Calendar ID: `ical show --id EVENT_ID --calendar you@example.com --json`
 - Add and verify an event with conflict check & invites:
   `ical add -t "Meeting" -s "Monday, August 10, 2026 at 1:00 PM" -e "Monday, August 10, 2026 at 2:00 PM" -c "you@example.com" -a "user@example.com"`
 - Get a machine-readable verified result:
@@ -88,11 +144,18 @@ def build_guide() -> str:
 - Launch FastMCP stdio server for tool calling: `ical-mcp`
 - Compatibility alias: `ical mcp`
 
+`ical list` returns each event's Calendar ID, title, start/end, and location.
+Use `ical search QUERY` to find matching titles or locations. Both commands
+return IDs; use one with `ical show` to inspect an event created by any app. `show`
+returns title, ISO 8601 start/end, calendar, location, description, URL, and
+attendees. Missing optional text fields are empty strings. The MCP server offers
+the same read path through `list_events`, `search_events`, and `show_event`.
+
 `ical add` only reports verified success after reading the created event back
 by its Calendar ID. The JSON success object has `status: "verified"` and an
-`event` with `id`, `title`, ISO 8601 `start` and `end`, `calendar`, and
-`attendees`; each attendee has an `email` and RSVP `status`. An `unknown` RSVP means no response
-has been recorded, not that the invite was accepted.
+`event` with the same event details; each attendee has an `email` and RSVP `status`.
+An `unknown` RSVP means no response has been recorded, not that the invite was
+accepted.
 
 Calendar automation calls have a 20-second timeout. If the conflict check times
 out, `ical add` returns `not_created`; no event write was attempted, so retry

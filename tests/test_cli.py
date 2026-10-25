@@ -146,7 +146,8 @@ def test_show_event_json_output_is_read_only_and_complete():
     event = {
         "id": "evt-joe", "title": "Work session with Joe", "start": datetime.datetime(2026, 10, 24, 11),
         "end": datetime.datetime(2026, 10, 24, 14), "start_str": "Sat 11am", "end_str": "Sat 2pm",
-        "calendar": "Personal", "attendees": [{"email": "jheupler@berkeley.edu", "status": "unknown"}],
+        "calendar": "Personal", "location": "Room 4", "description": "Bring the documents",
+        "url": "https://example.test/event", "attendees": [{"email": "jheupler@berkeley.edu", "status": "unknown"}],
     }
     with patch("ical.calendar.get_event_details", return_value=event) as mock_show, patch("ical.calendar.add_event") as mock_add:
         result = runner.invoke(app, ["show", "--id", "evt-joe", "--calendar", "Personal", "--json"])
@@ -157,6 +158,7 @@ def test_show_event_json_output_is_read_only_and_complete():
         "event": {
             "id": "evt-joe", "title": "Work session with Joe", "start": "2026-10-24T11:00:00",
             "end": "2026-10-24T14:00:00", "calendar": "Personal",
+            "location": "Room 4", "description": "Bring the documents", "url": "https://example.test/event",
             "attendees": [{"email": "jheupler@berkeley.edu", "status": "unknown"}],
         },
     }
@@ -165,13 +167,16 @@ def test_show_event_json_output_is_read_only_and_complete():
 
 
 def test_show_event_human_output_includes_attendee_status():
-    event = {"id": "evt-joe", "title": "Work session with Joe", "start": "s", "end": "e", "start_str": "Sat 11am", "end_str": "Sat 2pm", "calendar": "Personal", "attendees": [{"email": "jheupler@berkeley.edu", "status": "unknown"}]}
+    event = {"id": "evt-joe", "title": "Work session with Joe", "start": "s", "end": "e", "start_str": "Sat 11am", "end_str": "Sat 2pm", "calendar": "Personal", "location": "Room 4", "description": "Bring documents", "url": "https://example.test/event", "attendees": [{"email": "jheupler@berkeley.edu", "status": "unknown"}]}
     with patch("ical.calendar.get_event_details", return_value=event):
         result = runner.invoke(app, ["show", "--id", "evt-joe", "--calendar", "Personal"])
     assert result.exit_code == 0
     assert "Work session with Joe" in result.stdout
     assert "jheupler@berkeley.edu" in result.stdout
     assert "unknown" in result.stdout
+    assert "Room 4" in result.stdout
+    assert "Bring documents" in result.stdout
+    assert "https://example.test/event" in result.stdout
 
 
 def test_list_command_json_output():
@@ -192,11 +197,13 @@ def test_list_command_json_output_with_real_datetimes():
     # swallowed by the command's own error handler (exit 0, broken output).
     events = [
         {
+            "id": "standup-event-id",
             "title": "Standup",
             "start": datetime.datetime(2026, 8, 10, 9, 0),
             "end": datetime.datetime(2026, 8, 10, 9, 15),
             "start_str": "Mon 9am",
             "end_str": "Mon 9:15am",
+            "location": "Room 4",
         }
     ]
     with patch("ical.calendar.get_events", return_value=events):
@@ -204,16 +211,20 @@ def test_list_command_json_output_with_real_datetimes():
     assert result.exit_code == 0
     assert "Error listing events" not in result.stdout
     payload = json.loads(result.stdout)
-    assert payload["events"][0] == {"title": "Standup", "start": "Mon 9am", "end": "Mon 9:15am"}
+    assert payload["events"][0] == {
+        "id": "standup-event-id", "title": "Standup", "start": "Mon 9am", "end": "Mon 9:15am", "location": "Room 4",
+    }
 
 
 def test_list_command_table_output():
-    events = [{"title": "Standup", "start": None, "end": None, "start_str": "Mon 9am", "end_str": "Mon 9:15am"}]
+    events = [{"id": "standup-event-id", "title": "Standup", "start": None, "end": None, "start_str": "Mon 9am", "end_str": "Mon 9:15am", "location": "Room 4"}]
     with patch("ical.calendar.get_events", return_value=events):
         result = runner.invoke(app, ["list"])
     assert result.exit_code == 0
     assert "Standup" in result.stdout
     assert "Mon 9am" in result.stdout
+    assert "standup-event-id" in result.stdout
+    assert "Room 4" in result.stdout
 
 
 def test_list_command_handles_error():
@@ -225,11 +236,13 @@ def test_list_command_handles_error():
 
 def test_list_single_date_passes_local_day_window_and_keeps_json_shape():
     events = [{
+        "id": "court-event-id",
         "title": "Court appearance",
         "start": datetime.datetime(2026, 10, 27, 13, 30),
         "end": datetime.datetime(2026, 10, 27, 14, 30),
         "start_str": "Tue Oct 27 1:30 PM",
         "end_str": "Tue Oct 27 2:30 PM",
+        "location": "201 N. First Street, San Jose, CA",
     }]
     with patch("ical.calendar.get_events", return_value=events) as mock_get:
         result = runner.invoke(app, ["list", "-c", "Personal", "--date", "2026-10-27", "--json"])
@@ -243,8 +256,24 @@ def test_list_single_date_passes_local_day_window_and_keeps_json_shape():
     payload = json.loads(result.stdout)
     assert payload == {
         "calendar": "Personal",
-        "events": [{"title": "Court appearance", "start": "Tue Oct 27 1:30 PM", "end": "Tue Oct 27 2:30 PM"}],
+        "events": [{
+            "id": "court-event-id", "title": "Court appearance", "start": "Tue Oct 27 1:30 PM",
+            "end": "Tue Oct 27 2:30 PM", "location": "201 N. First Street, San Jose, CA",
+        }],
     }
+
+
+def test_list_human_output_includes_event_id_and_location():
+    event = {
+        "id": "court-event-id", "title": "Court appearance", "start": None, "end": None,
+        "start_str": "Tue Oct 27 1:30 PM", "end_str": "Tue Oct 27 2:30 PM",
+        "location": "201 N. First Street, San Jose, CA",
+    }
+    with patch("ical.calendar.get_events", return_value=[event]):
+        result = runner.invoke(app, ["list", "--date", "2026-10-27"])
+    assert result.exit_code == 0
+    assert "court-event-id" in result.stdout
+    assert "201 N. First Street, San Jose, CA" in result.stdout
 
 
 def test_list_inclusive_date_range_passes_half_open_window():
@@ -284,6 +313,63 @@ def test_list_help_documents_single_day_and_range_filters():
     assert result.exit_code == 0
     for option in ("--date", "--from", "--to", "--calendar", "--json"):
         assert option in result.stdout
+
+
+def test_search_command_passes_filters_and_limit_and_keeps_event_identity():
+    events = [{
+        "id": "court-event-id", "title": "Court Appearance", "location": "San Jose Courthouse",
+        "start": datetime.datetime(2026, 10, 27, 13, 30), "end": datetime.datetime(2026, 10, 27, 14, 30),
+        "start_str": "Tue Oct 27 1:30 PM", "end_str": "Tue Oct 27 2:30 PM",
+    }]
+    with patch("ical.calendar.search_events", return_value=events) as mock_search:
+        result = runner.invoke(app, [
+            "search", "court", "-c", "Personal", "--date", "2026-10-27", "--limit", "5", "--json",
+        ])
+    assert result.exit_code == 0
+    mock_search.assert_called_once_with(
+        "court", "Personal", limit=5,
+        start_before=datetime.datetime(2026, 10, 28),
+        end_after=datetime.datetime(2026, 10, 27),
+    )
+    assert json.loads(result.stdout) == {
+        "calendar": "Personal",
+        "events": [{
+            "id": "court-event-id", "title": "Court Appearance", "start": "Tue Oct 27 1:30 PM",
+            "end": "Tue Oct 27 2:30 PM", "location": "San Jose Courthouse",
+        }],
+    }
+
+
+def test_search_command_requires_query_and_help_documents_filters():
+    missing = runner.invoke(app, ["search"])
+    assert missing.exit_code == 2
+    help_result = runner.invoke(app, ["search", "-h"])
+    assert help_result.exit_code == 0
+    for option in ("--calendar", "--date", "--from", "--to", "--limit", "--json"):
+        assert option in help_result.stdout
+
+
+def test_search_agent_contract_and_guide_document_query():
+    from ical.agent import build_schema, build_guide
+
+    assert "search" in build_schema()["commands"]
+    assert "search_events" in build_schema()["mcp_tools"]
+    assert "ical search QUERY" in build_guide()
+
+
+def test_agent_schema_and_guide_document_event_discovery_details_and_date_filters():
+    from ical.agent import build_schema, build_guide
+
+    schema = build_schema()
+    guide = build_guide()
+    schema_text = json.dumps(schema)
+    assert "--date" in schema_text
+    assert "--from" in schema_text
+    assert "--to" in schema_text
+    assert '"id"' in schema_text
+    assert '"location"' in schema_text
+    assert "--date" in guide
+    assert "location" in guide.lower()
 
 
 def test_mcp_command_runs_server():

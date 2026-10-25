@@ -33,6 +33,8 @@ ical list -c you@example.com
 ical list -c you@example.com -j
 ical list -c you@example.com --date 2026-10-27
 ical list -c you@example.com --from 2026-10-27 --to 2026-10-31
+ical search courthouse -c you@example.com --date 2026-10-27
+ical show --id EVENT_ID -c you@example.com --json
 ```
 
 Every command and command group accepts both `-h` and `--help`; generated
@@ -52,13 +54,25 @@ status.
 `ical list` without date options lists the whole calendar. Use `--date`
 (`YYYY-MM-DD`) to list one local calendar day, or use both `--from` and `--to`
 for an inclusive date range. Date-filtered lists query Calendar.app only for
-events overlapping that window, so they stay focused even when unrelated
-events elsewhere in the calendar cannot be read. Matching events are read
-individually, so one unreadable item does not hide other readable events in
-the requested window. `--date` cannot be combined
-with `--from` or `--to`; ranges require both endpoints. `-j`/`--json` keeps the
-same `{ "calendar": ..., "events": [{ "title": ..., "start": ..., "end": ... }] }`
-shape for filtered and unfiltered results.
+events overlapping that window, so unrelated events elsewhere cannot interrupt
+the lookup. Matching events are read individually, so one unreadable item does
+not hide other readable matches. `--date` cannot be combined with `--from` or
+`--to`; ranges require both endpoints.
+
+Each listed event includes its Calendar ID and location as well as its title
+and times. Use the ID to inspect an event created by any app, not only `ical`:
+`ical show --id EVENT_ID --calendar CALENDAR`. The `show` result includes
+location, description, URL, and attendee RSVP status where available. The JSON
+list envelope remains `{ "calendar": ..., "events": [...] }`, with `id`,
+`title`, `start`, `end`, and `location` in each event. The verified `show` and
+`add` event includes `id`, `title`, `start`, `end`, `calendar`, `location`,
+`description`, `url`, and `attendees`; absent optional text values are empty
+strings. `-j`/`--json` works with filtered and unfiltered lists.
+
+Use `ical search QUERY` to find case-insensitive substrings in event titles or
+locations. Search accepts the same optional `--date` or inclusive `--from` /
+`--to` filters as `list`, plus `--limit` (default 20). Search results include
+the Calendar ID and location, so you can pass an ID directly to `show`.
 
 Start and end values accept natural-language dates and ISO 8601. An explicit
 ISO 8601 UTC offset is converted to the Mac's local calendar time before the
@@ -83,7 +97,11 @@ lookup failure returns `status: "verification_failed"`, the requested event
 ID, and the error; retry the read after checking Calendar, never the add.
 
 ## MCP (for AI agents)
-`ical-mcp` is the standalone FastMCP server command for stdio clients. It exposes `list_calendars`, `list_events`, and `add_calendar_event`. The backward-compatible `ical mcp` command runs the same server. Point any MCP-compatible client (Claude Desktop, Claude Code, etc.) at the standalone executable:
+`ical-mcp` is the standalone FastMCP server command for stdio clients. It
+exposes `list_calendars`, `list_events`, `search_events`, `show_event`, and
+`add_calendar_event`. `list_events` and `search_events` accept optional date
+filters; `show_event` reads any event by ID. The backward-compatible `ical mcp` command runs the same
+server. Point any MCP-compatible client (Claude Desktop, Claude Code, etc.) at the standalone executable:
 ```json
 {
   "mcpServers": {

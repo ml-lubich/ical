@@ -4,9 +4,10 @@ from ical.agent import build_schema, build_guide
 def test_build_schema_structure():
     schema = build_schema()
     assert schema["name"] == "ical"
-    assert set(schema["commands"].keys()) == {"calendars", "list", "show", "add", "mcp"}
+    assert set(schema["commands"].keys()) == {"calendars", "list", "search", "show", "add", "mcp"}
     assert "--title" in schema["commands"]["add"]["flags"]
     assert "--calendar" in schema["commands"]["list"]["flags"]
+    assert "--date" in schema["commands"]["search"]["flags"]
     assert "--json" in schema["commands"]["add"]["flags"]
     assert set(schema["commands"]["show"]["flags"]) == {"--id", "--calendar", "--json"}
 
