@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
+from typer.main import get_command
 
 from ical.cli import app
 from ical import __version__
@@ -311,8 +312,9 @@ def test_list_rejects_invalid_or_ambiguous_date_filters_without_calendar_call(ar
 def test_list_help_documents_single_day_and_range_filters():
     result = runner.invoke(app, ["list", "-h"])
     assert result.exit_code == 0
-    for option in ("--date", "--from", "--to", "--calendar", "--json"):
-        assert option in result.output
+    command = get_command(app).commands["list"]
+    options = {option for param in command.params for option in getattr(param, "opts", [])}
+    assert {"--date", "--from", "--to", "--calendar", "--json"} <= options
 
 
 def test_search_command_passes_filters_and_limit_and_keeps_event_identity():
@@ -345,8 +347,9 @@ def test_search_command_requires_query_and_help_documents_filters():
     assert missing.exit_code == 2
     help_result = runner.invoke(app, ["search", "-h"])
     assert help_result.exit_code == 0
-    for option in ("--calendar", "--date", "--from", "--to", "--limit", "--json"):
-        assert option in help_result.output
+    command = get_command(app).commands["search"]
+    options = {option for param in command.params for option in getattr(param, "opts", [])}
+    assert {"--calendar", "--date", "--from", "--to", "--limit", "--json"} <= options
 
 
 def test_search_agent_contract_and_guide_document_query():
